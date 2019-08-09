@@ -5,7 +5,6 @@
 # Build-in modules
 import argparse
 import os
-from pathlib import Path
 
 # Third-party modules
 import numpy as np
@@ -15,27 +14,20 @@ from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import RMSprop
 
-# Proprietary modules
-from utils import make_context_vector
-
 # -- File info --
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-05'
+__date__ = '2019-08-09'
 
 
-def embed_functions(functions_path, context_path, dimension=256,
-                    epochs=150, batch_size=2048, save_model=True, save_history=True):
+def embed_functions(path_to_output, path_to_models, path_to_histories=None, autoencoder=False,
+                    dimension=256, epochs=150, batch_size=2048):
     """Function projecting functional signatures of premises into a lower dimensional space.
        Arguments:
-       functions_path - path to functional signatures of premises;
-                        numpy array of shape (number of premises, number of unique function symbols),
-       context_path   - (optional) path to contextualised functional symbols;
-                        numpy array of shape (number of unique function symbols, number of unique function symbols),
-                        if not provided then model will train as autoencoder.
+       path_to_output - path to premise count functional signatures
        autoencoder    - if True, then autoencoder embedding will be the method of projection,
        dimension      - dimension of projection,
        epochs         - number of training epochs for the embedding model,
@@ -47,25 +39,19 @@ def embed_functions(functions_path, context_path, dimension=256,
     """
 
     # Get functional signatures
-    functions = np.load(functions_path, mmap_mode='r')
+    output_tensor = np.load(path_to_output, mmap_mode='r')
 
     # Number of unique functions
-    num_fun = functions.shape[1]
+    num_fun = output_tensor.shape[-1]
 
-    # Get context vectors
-    if context_path is None:
-        functions_input = functions_output = functions
-        activation = 'relu'
+    # Define model parameters
+    if autoencoder:
+        output_tensor = output_tensor/ np.max(output_tensor, axis=-1)
+        input_tensor = output_tensor
+        activation = 'sigmoid'
         loss = 'mse'
     else:
-        if not Path(context_path).is_file():
-            context = make_context_vector(path_to_fun=functions_path,
-                                          path_to_context=context_path)
-        else:
-            context = np.load(context_path, mmap_mode='r')
-
-        functions_input = np.identity(num_fun)
-        functions_output = context
+        input_tensor = np.identity(num_fun)
         activation = 'softmax'
         loss = 'categorical_crossentropy'
 
@@ -80,16 +66,15 @@ def embed_functions(functions_path, context_path, dimension=256,
     model.compile(optimizer=RMSprop(decay=1e-8), loss=loss, metrics=['accuracy'])
 
     # Train model
-    history = model.fit(functions_input, functions_output, epochs=epochs, batch_size=batch_size, shuffle=True)
+    history = model.fit(input_tensor, output_tensor, epochs=epochs, batch_size=batch_size, shuffle=True)
 
     # Save history
-    if save_history:
-        with open('histories/embedding_model_history.pickle', 'wb') as dictionary:
+    if path_to_histories is not None:
+        with open(os.path.join(path_to_histories, 'embedding_model_history.pickle'), 'wb') as dictionary:
             pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Save trained model
-    if save_model:
-        model.save('models/embedding_model.h5')
+    model.save(os.path.join(path_to_models, 'embedding_model.h5'))
 
 
 def main():
@@ -136,7 +121,7 @@ def main():
     batch_size = args['batch_size']
 
     # Checks
-    if not Path(functions_path).is_file():
+    if not os.path.isfile(functions_path):
         exit('Path to functions is not a file!')
     if not functions_path[-4:] == '.npy':
         exit('Path to functions is not a numpy array file!')
@@ -145,9 +130,17 @@ def main():
     if dim <= 0:
         exit('Dimension must be a positive integer.')
 
-    embed_functions(functions_path=functions_path, context_path=context_path, dimension=dim,
-                    epochs=epochs, batch_size=batch_size, save_model=True, save_history=True)
+    cwd = os.getcwd()
+    try:
+        os.mkdir('models')
+    except OSError:
+        pass
 
+    try:
+        os.mkdir('histories')
+    except OSError:
+        pass
 
-if __name__ == '__main__':
-    main()
+    embed_functions(path_to_output=functions_path, path_to_models=os.path.join(cwd, 'models'),
+                    path_to_histories=os.path.join(cwd, 'histories'),
+                    dimension=dim, epochs=epochs, batch_size=batch_size)
