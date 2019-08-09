@@ -99,3 +99,16 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Folders
+data/
+histories/
+models/
+nndata/
+plots/
+
+# Compressed files
+*.zip
+
+# Misc
+.idea/
