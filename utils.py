@@ -14,7 +14,6 @@ import pickle
 from lark import Lark, Transformer
 from tqdm import tqdm
 
-
 # -- File info --
 __version__ = '0.1.0'
 __copyright__ = 'Andrzej Kucik 2019'
@@ -27,7 +26,8 @@ tptp_parser = Lark(r"""
     ?tptp_file : tptp_input*
     ?tptp_input : annotated_formula | include
 
-    ?annotated_formula : thf_annotated | tfx_annotated | tff_annotated| tcf_annotated | fof_annotated | cnf_annotated | tpi_annotated
+    ?annotated_formula : thf_annotated | tfx_annotated | tff_annotated| tcf_annotated | fof_annotated | cnf_annotated
+                       | tpi_annotated
 
     tpi_annotated : "tpi(" name "," formula_role "," tpi_formula annotations* ")."
     tpi_formula : fof_formula
@@ -40,8 +40,9 @@ tptp_parser = Lark(r"""
     annotations : "," source (optional_info)*
 
     formula_role : FORMULA_ROLE
-    FORMULA_ROLE : "axiom" | "hypothesis" | "definition" | "assumption" | "lemma" | "theorem" | "corollary" | "conjecture"
-                | "negated_conjecture" | "plain" | "type" | "fi_domain" | "fi_functors" | "fi_predicates" | "unknown" | LOWER_WORD
+    FORMULA_ROLE : "axiom" | "hypothesis" | "definition" | "assumption" | "lemma" | "theorem" | "corollary"
+                 | "conjecture" | "negated_conjecture" | "plain" | "type" | "fi_domain" | "fi_functors"
+                 | "fi_predicates" | "unknown" | LOWER_WORD
 
     thf_formula : thf_logic_formula | thf_sequent
     thf_logic_formula : thf_binary_formula | thf_unitary_formula | thf_type_formula | thf_subtype
@@ -54,7 +55,8 @@ tptp_parser = Lark(r"""
 
     thf_apply_formula: thf_unitary_formula "@" thf_unitary_formula | thf_apply_formula "@" thf_unitary_formula
 
-    thf_unitary_formula : thf_quantified_formula | thf_unary_formula | thf_atom | thf_conditional | thf_let | thf_tuple | "(" thf_logic_formula ")"
+    thf_unitary_formula : thf_quantified_formula | thf_unary_formula | thf_atom | thf_conditional | thf_let | thf_tuple
+                        | "(" thf_logic_formula ")"
 
     thf_quantified_formula : thf_quantification thf_unitary_formula
     thf_quantification : thf_quantifier "[" thf_variable_list "] :"
@@ -65,7 +67,8 @@ tptp_parser = Lark(r"""
     thf_unary_formula : thf_unary_connective "(" thf_logic_formula ")"
     thf_atom : thf_function | variable | defined_term | thf_conn_term
 
-    thf_function : atom | functor "(" thf_arguments ")" | defined_functor "(" thf_arguments ")" | system_functor "(" thf_arguments ")"
+    thf_function : atom | functor "(" thf_arguments ")" | defined_functor "(" thf_arguments ")"
+                 | system_functor "(" thf_arguments ")"
 
     thf_conn_term : thf_pair_connective | assoc_connective | thf_unary_connective
 
@@ -100,13 +103,15 @@ tptp_parser = Lark(r"""
     thf_formula_list : thf_logic_formula ("," thf_logic_formula)*
 
     logic_defn_rule : logic_defn_lhs assignment logic_defn_rhs
-    logic_defn_lhs : logic_defn_value | thf_top_level_type | name | "$constants" | "$quantification" | "$consequence" | "$modalities"
+    logic_defn_lhs : logic_defn_value | thf_top_level_type | name | "$constants" | "$quantification" | "$consequence"
+                   | "$modalities"
 
     logic_defn_rhs : logic_defn_value | thf_unitary_formula
     logic_defn_value : LOGIC_DEFN_VALUE
-    LOGIC_DEFN_VALUE : DEFINED_CONSTANT | "$rigid" | "$flexible" | "$constant" | "$varying" | "$cumulative" | "$decreasing" | "$local"
-                    | "$global" | "$modal_system_K" | "$modal_system_T" | "$modal_system_D" | "$modal_system_S4" | "$modal_system_S5"
-                    | "$modal_axiom_K" | "$modal_axiom_T" | "$modal_axiom_B" | "$modal_axiom_D" | "$modal_axiom_4" | "$modal_axiom_5"
+    LOGIC_DEFN_VALUE : DEFINED_CONSTANT | "$rigid" | "$flexible" | "$constant" | "$varying" | "$cumulative"
+                     | "$decreasing" | "$local" | "$global" | "$modal_system_K" | "$modal_system_T" | "$modal_system_D"
+                     | "$modal_system_S4" | "$modal_system_S5" | "$modal_axiom_K" | "$modal_axiom_T" | "$modal_axiom_B"
+                     | "$modal_axiom_D" | "$modal_axiom_4" | "$modal_axiom_5"
 
     tfx_formula : tfx_logic_formula | thf_sequent
     tfx_logic_formula : thf_logic_formula
@@ -118,7 +123,8 @@ tptp_parser = Lark(r"""
     tff_binary_assoc : tff_or_formula | tff_and_formula
     tff_or_formula : tff_unitary_formula "|" tff_unitary_formula | tff_or_formula "|" tff_unitary_formula
     tff_and_formula : tff_unitary_formula "&" tff_unitary_formula | tff_and_formula "&" tff_unitary_formula
-    tff_unitary_formula : tff_quantified_formula | tff_unary_formula | tff_atomic_formula | tff_conditional | tff_let | "(" tff_logic_formula ")"
+    tff_unitary_formula : tff_quantified_formula | tff_unary_formula | tff_atomic_formula | tff_conditional | tff_let
+                        | "(" tff_logic_formula ")"
 
     tff_quantified_formula : fof_quantifier "[" tff_variable_list "] :" tff_unitary_formula
     tff_variable_list : tff_variable ("," tff_variable)*
@@ -252,7 +258,8 @@ tptp_parser = Lark(r"""
     DEFINED_PROPOSITION :  ATOMIC_DEFINED_WORD | "$true" | "$false"
     defined_predicate : DEFINED_PREDICATE
     DEFINED_PREDICATE : ATOMIC_DEFINED_WORD | "$distinct" | "$less" | "$lesseq" | "$greater" | "$greatereq" | "$is_int"
-                        | "$is_rat" | "$box_P" | "$box_i" | "$box_int" | "$box" | "$dia_P" | "$dia_i" | "$dia_int" | "$dia"
+                        | "$is_rat" | "$box_P" | "$box_i" | "$box_int" | "$box" | "$dia_P" | "$dia_i" | "$dia_int"
+                        | "$dia"
 
     defined_infix_pred : infix_equality | assignment
     infix_equality : INFIX_EQUALITY
@@ -271,8 +278,9 @@ tptp_parser = Lark(r"""
     defined_constant : DEFINED_CONSTANT
     DEFINED_CONSTANT : DEFINED_FUNCTOR
     defined_functor : DEFINED_FUNCTOR
-    DEFINED_FUNCTOR : ATOMIC_DEFINED_WORD |"$uminus" | "$sum" | "$difference" | "$product" | "$quotient" | "$quotient_e" | "$quotient_t" | "$quotient_f"
-                    | "$remainder_e" | "$remainder_t" | "$remainder_f" | "$floor" | "$ceiling" | "$truncate" | "$round" | "$to_int" | "$to_rat" | "$to_real"
+    DEFINED_FUNCTOR : ATOMIC_DEFINED_WORD |"$uminus" | "$sum" | "$difference" | "$product" | "$quotient" | "$quotient_e"
+                    | "$quotient_t" | "$quotient_f" | "$remainder_e" | "$remainder_t" | "$remainder_f" | "$floor"
+                    | "$ceiling" | "$truncate" | "$round" | "$to_int" | "$to_rat" | "$to_real"
     ?defined_term : number | DISTINCT_OBJECT
     variable : VARIABLE
     VARIABLE : UPPER_WORD
@@ -312,8 +320,9 @@ tptp_parser = Lark(r"""
     inference_item : inference_status | assumptions_record | new_symbol_record | refutation
     inference_status : "status(" STATUS_VALUE ")" | inference_info
 
-    STATUS_VALUE : "suc" | "unp" | "sap" | "esa" | "sat" | "fsa" | "thm" | "eqv" | "tac" | "wec" | "eth" | "tau" | "wtc" | "wth" | "cax" | "sca" | "tca"
-                | "wca" | "cup" | "csp" | "ecs" | "csa" | "cth" | "ceq" | "unc" | "wcc" | "ect" | "fun" | "uns" | "wuc" | "wct" | "scc" | "uca" | "noc"
+    STATUS_VALUE : "suc" | "unp" | "sap" | "esa" | "sat" | "fsa" | "thm" | "eqv" | "tac" | "wec" | "eth" | "tau"
+                 | "wtc" | "wth" | "cax" | "sca" | "tca" | "wca" | "cup" | "csp" | "ecs" | "csa" | "cth" | "ceq"
+                 | "unc" | "wcc" | "ect" | "fun" | "uns" | "wuc" | "wct" | "scc" | "uca" | "noc"
 
     inference_info : inference_rule "(" ATOMIC_WORD "," general_list ")"
 
@@ -332,10 +341,12 @@ tptp_parser = Lark(r"""
     name_list : name ("," name)*
 
     general_term : general_data | general_data ":" general_term | general_list
-    general_data : ATOMIC_WORD | general_function | variable | number | DISTINCT_OBJECT | formula_data | "bind(" variable "," formula_data ")"
+    general_data : ATOMIC_WORD | general_function | variable | number | DISTINCT_OBJECT | formula_data
+                 | "bind(" variable "," formula_data ")"
     general_function : ATOMIC_WORD "(" general_terms ")"
 
-    formula_data : "$thf(" thf_formula ")" | "$tff(" tff_formula ")" | "$fof(" fof_formula ")" | "$cnf(" cnf_formula ")" | "$fot(" fof_term ")"
+    formula_data : "$thf(" thf_formula ")" | "$tff(" tff_formula ")" | "$fof(" fof_formula ")" | "$cnf(" cnf_formula ")"
+                 | "$fot(" fof_term ")"
     general_list : "[" general_terms? "]"
     general_terms : general_term ("," general_term)*
 
@@ -593,6 +604,40 @@ def get_all_used_functions(paths_to_signatures):
     return sorted(list(all_used_functions))
 
 
+def convert_to_integers(paths_to_signatures):
+    if not isinstance(paths_to_signatures, list):
+        paths_to_signatures = [paths_to_signatures]
+
+    all_used_functions = get_all_used_functions(paths_to_signatures)
+
+    for path in paths_to_signatures:
+        new_signatures = {}
+        with open(path, 'rb') as dictionary:
+            signatures = pickle.load(dictionary)
+        for key, value in signatures.items():
+            new_signatures[key] = [all_used_functions.index(v) for v in value]
+
+        new_path = '_int.'.join(path.split('.'))
+        with open(new_path, 'wb') as dictionary:
+            pickle.dump(new_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def embed_integers(paths_to_signatures, weight):
+    if not isinstance(paths_to_signatures, list):
+        paths_to_signatures = [paths_to_signatures]
+
+    for path in paths_to_signatures:
+        new_signatures = {}
+        with open(path, 'rb') as dictionary:
+            signatures = pickle.load(dictionary)
+        for key, value in signatures.items():
+            new_signatures[key] = np.array([weight[n] for n in value])
+
+        new_path = '_embed.'.join(path.split('.'))
+        with open(new_path, 'wb') as dictionary:
+            pickle.dump(new_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+
 def count_functions(signature, functions):
     return [signature.count(functions[n]) for n in range(len(functions))]
 
@@ -680,3 +725,44 @@ def form_train_sets(path_to_data, weight, split=10):
         np.save(os.path.join(path_to_data, 'y_{}.npy'.format(n)), y_train[1:])
 
 
+def form_train_sets_rnn(path_to_data, weight, split=10, max_len=64):
+    with open(os.path.join(path_to_data, 'conjecture_signatures_int_embed.pickle'), 'rb') as dictionary:
+        conjecture_signatures = pickle.load(dictionary)
+    with open(os.path.join(path_to_data, 'axiom_signatures_int_embed.pickle'), 'rb') as dictionary:
+        axiom_signatures = pickle.load(dictionary)
+    with open(os.path.join(path_to_data, 'useful_axioms.pickle'), 'rb') as dictionary:
+        useful_axioms = pickle.load(dictionary)
+    with open(os.path.join(path_to_data, 'useless_axioms.pickle'), 'rb') as dictionary:
+        useless_axioms = pickle.load(dictionary)
+
+    conjecture_names = list(conjecture_signatures.keys())
+    chunk_size = len(conjecture_names) / split
+    shuffle(conjecture_names)
+
+    for n in range(split):
+        selected_conjectures = conjecture_names[int(n * chunk_size): int((n + 1) * chunk_size)]
+
+        x_train = np.zeros((1, 2, max_len, weight.shape[1]))
+        y_train = np.zeros((1,))
+
+        for conjecture_name in tqdm(selected_conjectures):
+            conjecture = conjecture_signatures[conjecture_name][:max_len]
+            conjecture = np.pad(conjecture, ((0, max_len - conjecture.shape[0]), (0, 0)), mode='constant',
+                                constant_values=0)
+            for axiom_name in useful_axioms[conjecture_name]:
+                axiom = axiom_signatures[axiom_name][:max_len]
+                axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
+                x = np.expand_dims(np.stack([conjecture, axiom], axis=0), axis=0)
+                x_train = np.concatenate([x_train, x], axis=0)
+            for axiom_name in useless_axioms[conjecture_name]:
+                axiom = axiom_signatures[axiom_name][:max_len]
+                axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
+                x = np.expand_dims(np.stack([conjecture, axiom], axis=0), axis=0)
+                x_train = np.concatenate([x_train, x], axis=0)
+
+            y = np.concatenate([np.ones((len(useful_axioms[conjecture_name]),)),
+                                np.zeros((len(useless_axioms[conjecture_name]),))], axis=0)
+            y_train = np.concatenate([y_train, y], axis=0)
+
+        np.save(os.path.join(path_to_data, 'x_rnn_{}.npy'.format(n)), x_train[1:])
+        np.save(os.path.join(path_to_data, 'y_rnn_{}.npy'.format(n)), y_train[1:])
