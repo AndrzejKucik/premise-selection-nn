@@ -4,14 +4,17 @@
 
 # Build-in modules
 from argparse import ArgumentParser
-from pathlib import Path
+import os
 
 # Third-party modules
 import numpy as np
 import pickle
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Add, Input, Dense, Dropout, Flatten
+from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, GaussianNoise, LeakyReLU
 from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l2
+import tensorflow as tf
 
 # -- File info --
 __version__ = '0.2.1'
@@ -36,28 +39,27 @@ parser.add_argument('-lc',
                     required=False,
                     help='Number of units in each layer (separate with commas).',
                     type=str)
-parser.add_argument('-r,'
-                    '-res',
-                    require=False,
+parser.add_argument('-r',
+                    '--res',
+                    required=False,
                     help='Residual connection?',
                     type=str,
                     default='False')
 parser.add_argument('-e',
                     '--epochs',
                     required=False,
-                    help='Number of layers.',
+                    help='Number of epochs.',
                     type=int,
-                    default=2)
+                    default=10)
 parser.add_argument('-bs',
                     '--batch_size',
                     required=False,
                     help='Batch size.',
                     type=int,
-                    default=64)
+                    default=32)
 
 
 def build_premise_selection_model(input_shape, layers_config=None, res=False):
-
     if layers_config is None:
         layers_config = []
 
@@ -65,21 +67,27 @@ def build_premise_selection_model(input_shape, layers_config=None, res=False):
     x = Flatten()(model_input)
 
     for n in range(len(layers_config)):
-        x = Dense(layers_config[n], activation='relu', name='dense_' + str(n))(x)
+        x = Dense(layers_config[n], name='dense_' + str(n))(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(0.2)(x)
+        x = Dropout(0.5)(x)
         if res:
-            y = Dense(layers_config[n], activation='relu', name='res_dense_' + str(n))(x)
+            y = Dense(layers_config[n], name='res_dense_' + str(n))(x)
             x = Add(name='add_' + str(n))([x, y])
+            x = BatchNormalization()(x)
+            x = LeakyReLU(0.2)(x)
+            x = Dropout(0.5)(x)
 
-    model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
+        model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
 
-    model = Model(model_input, model_output)
+        model = Model(model_input, model_output)
 
     return model
 
 
 def main():
     # Arguments
-    args = vars(parser)
+    args = vars(parser.parse_args())
     data_dir = args['data_dir']
     layers_config = args['layers_config']
     res = args['res']
@@ -87,7 +95,7 @@ def main():
     batch_size = args['batch_size']
 
     # Checks
-    if not Path(data_dir).is_dir():
+    if not os.path.isdir(data_dir):
         exit('Path to data directory is not a valid path!')
 
     # Conversions
@@ -98,10 +106,10 @@ def main():
         res = False
 
     # Data
-    x_train = np.load(Path.joinpath(data_dir, 'training_data.npy'))
-    x_test = np.load(Path.joinpath(data_dir, 'test_data.npy'))
-    y_train = np.load(Path.joinpath(data_dir, 'training_labels.npy'))
-    y_test = np.load(Path.joinpath(data_dir, 'test_labels.npy'))
+    x_train = np.load(os.path.join(data_dir, 'x_train.npy'))
+    x_test = np.load(os.path.join(data_dir, 'x_test.npy'))
+    y_train = np.load(os.path.join(data_dir, 'y_train.npy'))
+    y_test = np.load(os.path.join(data_dir, 'y_test.npy'))
 
     # Assertions
     assert len(x_train) == len(y_train)
@@ -116,24 +124,28 @@ def main():
     x_train /= std
     x_test /= std
 
-    # Callbacks
-    callbacks_list = [EarlyStopping(monitor='val_acc', patience=25)]
-
     # Model
-    model = build_premise_selection_model(input_shape=x_train.shape[-1], layers_config=config)
+    model = build_premise_selection_model(input_shape=x_train.shape[1:], layers_config=config, res=res)
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001), metrics=['accuracy'])
     model.summary()
 
     # Train model
-    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True,
-                        callbacks=callbacks_list, validation_split=0.1, verbose=1)
+    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=0.1)
 
     # Save trained model
-    model.save('models/{}_{}_{}_{}.h5'.format(epochs, batch_size, layers_config, res))
+    model.save(
+        'models/epochs={}_batch_size={}_layers_config={}_res={}.h5'.format(epochs, batch_size, layers_config, res))
 
     # Save history
-    with open('histories/{}_{}_{}_{}.pickle'.format(epochs, batch_size, layers_config, res), 'wb') as dictionary:
+    with open('histories/epochs={}_batch_size={}_layers_config={}_res={}.pickle'.format(epochs, batch_size,
+                                                                                        layers_config, res), 'wb') \
+            as dictionary:
         pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Test model
     test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
-    print('Test loss {}, test accuracy: {}..'.format(round(test_loss, 4), round(100 * test_acc, 2))
+    print('Test loss {}, test accuracy: {}%.'.format(round(test_loss, 4), round(100 * test_acc, 2)))
+
+
+if __name__ == '__main__':
+    main()
