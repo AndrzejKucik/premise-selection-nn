@@ -614,26 +614,10 @@ def convert_to_integers(paths_to_signatures):
         new_signatures = {}
         with open(path, 'rb') as dictionary:
             signatures = pickle.load(dictionary)
-        for key, value in signatures.items():
+        for key, value in tqdm(signatures.items()):
             new_signatures[key] = [all_used_functions.index(v) for v in value]
 
         new_path = '_int.'.join(path.split('.'))
-        with open(new_path, 'wb') as dictionary:
-            pickle.dump(new_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def embed_integers(paths_to_signatures, weight):
-    if not isinstance(paths_to_signatures, list):
-        paths_to_signatures = [paths_to_signatures]
-
-    for path in paths_to_signatures:
-        new_signatures = {}
-        with open(path, 'rb') as dictionary:
-            signatures = pickle.load(dictionary)
-        for key, value in signatures.items():
-            new_signatures[key] = np.array([weight[n] for n in value])
-
-        new_path = '_embed.'.join(path.split('.'))
         with open(new_path, 'wb') as dictionary:
             pickle.dump(new_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -669,11 +653,11 @@ def calculate_context_distribution(path_to_context):
     print('Number of context premises: {}, number of functions: {}.'.format(num_context, num_fun))
 
     # Create network output placeholder
-    output_data = np.zeros((num_fun, num_fun))
+    output_data = np.zeros((num_fun, num_fun), dtype='float32')
 
     # Calculate probability distribution of functions which are in scope of the same premises
     for n in tqdm(range(num_fun)):
-        output = np.array([context[m] for m in range(num_context) if context[m, n] != 0])
+        output = np.array([context[m] for m in range(num_context) if context[m, n] != 0], dtype='float32')
         numerator = np.sum(output, axis=0)
         denominator = np.sum(numerator)
         if denominator == 0:
@@ -685,84 +669,102 @@ def calculate_context_distribution(path_to_context):
     np.save(new_path, output_data)
 
 
-def form_train_sets(path_to_data, weight, split=10):
-    with open(os.path.join(path_to_data, 'conjecture_signatures_count.pickle'), 'rb') as dictionary:
+def embed_integers(path_to_signatures, weight):
+    new_signatures = {}
+    with open(path_to_signatures, 'rb') as dictionary:
+        signatures = pickle.load(dictionary)
+    for key, value in tqdm(signatures.items()):
+        new_signatures[key] = np.array([weight[n] for n in value], dtype='float32')
+
+    new_path = '_embed.'.join(path_to_signatures.split('.'))
+    with open(new_path, 'wb') as dictionary:
+        pickle.dump(new_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def embed_count(path_to_signatures, weight):
+    with open(path_to_signatures, 'rb') as dictionary:
+        signatures = pickle.load(dictionary)
+
+    for key in tqdm(signatures.keys()):
+        value = np.array(signatures[key], dtype='float32')
+        signatures[key] = np.matmul(value, weight) / np.max(value)
+
+    new_path = '_embed.'.join(path_to_signatures.split('.'))
+    with open(new_path, 'wb') as dictionary:
+        pickle.dump(signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def form_train_sets(path_to_data, split=10, rnn=False, embedding_len=256, max_len=64, concat=True):
+    if rnn:
+        name = '_int_embed.pickle'
+    else:
+        name = '_count_embed.pickle'
+
+    with open(os.path.join(path_to_data, 'conjecture_signatures' + name), 'rb') as dictionary:
         conjecture_signatures = pickle.load(dictionary)
-    with open(os.path.join(path_to_data, 'axiom_signatures_count.pickle'), 'rb') as dictionary:
+    with open(os.path.join(path_to_data, 'axiom_signatures' + name), 'rb') as dictionary:
         axiom_signatures = pickle.load(dictionary)
     with open(os.path.join(path_to_data, 'useful_axioms.pickle'), 'rb') as dictionary:
         useful_axioms = pickle.load(dictionary)
     with open(os.path.join(path_to_data, 'useless_axioms.pickle'), 'rb') as dictionary:
         useless_axioms = pickle.load(dictionary)
 
-    conjecture_names = list(conjecture_signatures.keys())
+    conjecture_names = sorted(list(conjecture_signatures.keys()))
     chunk_size = len(conjecture_names) / split
-    shuffle(conjecture_names)
 
     for n in range(split):
         selected_conjectures = conjecture_names[int(n * chunk_size): int((n + 1) * chunk_size)]
 
-        x_train = np.zeros((1, 2, weight.shape[1]))
-        y_train = np.zeros((1,))
+        if rnn:
+            x_chunk = np.zeros((1, 2, max_len, embedding_len), dtype='float32')
+        else:
+            x_chunk = np.zeros((1, 2, embedding_len), dtype='float32')
 
+        y_chunk = np.zeros((1,), dtype='bool_')
+
+        print('Chunk {}/{}'.format(n + 1, split))
         for conjecture_name in tqdm(selected_conjectures):
-            x_plus = np.stack([np.array([conjecture_signatures[conjecture_name], axiom_signatures[axiom_name]])
-                               for axiom_name in useful_axioms[conjecture_name]], axis=0)
-
-            x_minus = np.stack([np.array([conjecture_signatures[conjecture_name], axiom_signatures[axiom_name]])
-                                for axiom_name in useless_axioms[conjecture_name]], axis=0)
-
-            x = np.concatenate([x_plus, x_minus], axis=0)
-            x = x / np.expand_dims(np.max(x, axis=-1), axis=-1)
-            x = np.matmul(x, weight)
-
-            y = np.concatenate([np.ones((len(x_plus),), dtype='bool_'), np.zeros((len(x_minus),), dtype='bool_')])
-
-            x_train = np.concatenate([x_train, x], axis=0)
-            y_train = np.concatenate([y_train, y], axis=0)
-
-        np.save(os.path.join(path_to_data, 'x_{}.npy'.format(n)), x_train[1:])
-        np.save(os.path.join(path_to_data, 'y_{}.npy'.format(n)), y_train[1:])
-
-
-def form_train_sets_rnn(path_to_data, weight, split=10, max_len=64):
-    with open(os.path.join(path_to_data, 'conjecture_signatures_int_embed.pickle'), 'rb') as dictionary:
-        conjecture_signatures = pickle.load(dictionary)
-    with open(os.path.join(path_to_data, 'axiom_signatures_int_embed.pickle'), 'rb') as dictionary:
-        axiom_signatures = pickle.load(dictionary)
-    with open(os.path.join(path_to_data, 'useful_axioms.pickle'), 'rb') as dictionary:
-        useful_axioms = pickle.load(dictionary)
-    with open(os.path.join(path_to_data, 'useless_axioms.pickle'), 'rb') as dictionary:
-        useless_axioms = pickle.load(dictionary)
-
-    conjecture_names = list(conjecture_signatures.keys())
-    chunk_size = len(conjecture_names) / split
-    shuffle(conjecture_names)
-
-    for n in range(split):
-        selected_conjectures = conjecture_names[int(n * chunk_size): int((n + 1) * chunk_size)]
-
-        x_train = np.zeros((1, 2, max_len, weight.shape[1]))
-        y_train = np.zeros((1,))
-
-        for conjecture_name in tqdm(selected_conjectures):
-            conjecture = conjecture_signatures[conjecture_name][:max_len]
-            conjecture = np.pad(conjecture, ((0, max_len - conjecture.shape[0]), (0, 0)), mode='constant',
-                                constant_values=0)
+            conjecture = conjecture_signatures[conjecture_name]
+            if rnn:
+                conjecture = conjecture[:max_len]
+                conjecture = np.pad(conjecture, ((0, max_len - conjecture.shape[0]), (0, 0)), mode='constant',
+                                    constant_values=0)
             for axiom_name in useful_axioms[conjecture_name]:
-                axiom = axiom_signatures[axiom_name][:max_len]
-                axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
+                axiom = axiom_signatures[axiom_name]
+                if rnn:
+                    axiom = axiom[:max_len]
+                    axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
                 x = np.expand_dims(np.stack([conjecture, axiom], axis=0), axis=0)
-                x_train = np.concatenate([x_train, x], axis=0)
+                x_chunk = np.concatenate([x_chunk, x], axis=0)
             for axiom_name in useless_axioms[conjecture_name]:
-                axiom = axiom_signatures[axiom_name][:max_len]
-                axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
+                axiom = axiom_signatures[axiom_name]
+                if rnn:
+                    axiom = axiom[:max_len]
+                    axiom = np.pad(axiom, ((0, max_len - axiom.shape[0]), (0, 0)), mode='constant', constant_values=0)
                 x = np.expand_dims(np.stack([conjecture, axiom], axis=0), axis=0)
-                x_train = np.concatenate([x_train, x], axis=0)
+                x_chunk = np.concatenate([x_chunk, x], axis=0)
 
-            y = np.concatenate([np.ones((len(useful_axioms[conjecture_name]),)),
-                                np.zeros((len(useless_axioms[conjecture_name]),))], axis=0)
-            y_train = np.concatenate([y_train, y], axis=0)
+            y_chunk = np.concatenate([y_chunk,
+                                      np.ones((len(useful_axioms[conjecture_name]),), dtype='bool_'),
+                                      np.zeros((len(useless_axioms[conjecture_name]),), dtype='bool_')])
 
-        np.save(os.path.join(path_to_data, 'x_rnn_{}.npy'.format(n)), x_train[1:])
-        np.save(os.path.join(path_to_data, 'y_rnn_{}.npy'.format(n)), y_train[1:])
+        if rnn:
+            name = '_rnn'
+        else:
+            name = ''
+
+        if concat:
+            try:
+                x = np.load('data/x{}.npy'.format(name), mmap_mode='r')
+                np.save('data/x{}.npy'.format(name), np.concatenate([x, x_chunk[1:]]))
+
+                y = np.load('data/y{}.npy'.format(name), mmap_mode='r')
+                np.save('data/y{}.npy'.format(name), np.concatenate([y, y_chunk[1:]]))
+
+            except FileNotFoundError:
+                np.save('data/x{}.npy'.format(name), x_chunk[1:])
+                np.save('data/y{}.npy'.format(name), y_chunk[1:])
+
+        else:
+            np.save('data/x{}_{}.npy'.format(name, n), x_chunk[1:])
+            np.save('data/y{}_{}.npy'.format(name, n), y_chunk[1:])

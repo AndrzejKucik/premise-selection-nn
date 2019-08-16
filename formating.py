@@ -12,8 +12,8 @@ from tensorflow.keras.models import load_model, Model
 
 # Proprietary modules
 from token_embedding import embed_functions
-from utils import (calculate_context_distribution, convert_to_count_signatures, convert_to_integers, embed_integers,
-                   extract_premises, form_train_sets, form_train_sets_rnn)
+from utils import (calculate_context_distribution, convert_to_count_signatures, convert_to_integers, embed_count,
+                   embed_integers, extract_premises, form_train_sets)
 
 # -- File info --
 __version__ = '0.1.0'
@@ -37,6 +37,12 @@ def main():
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
             print('Extracting premises...')
             extract_premises(path_to_premises=os.path.join(cwd, 'nndata'), save_dir=os.path.join(cwd, 'data'))
+
+    for file_name in ['conjecture_signatures_int.pickle', 'axiom_signatures_int.pickle']:
+        if file_name not in os.listdir(os.path.join(cwd, 'data')):
+            print('Tokenizing functions...')
+            convert_to_integers(paths_to_signatures=[os.path.join(cwd, 'data', 'conjecture_signatures.pickle'),
+                                                     os.path.join(cwd, 'data', 'axiom_signatures.pickle')])
 
     for file_name in ['conjecture_signatures_count.pickle', 'axiom_signatures_count.pickle']:
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
@@ -68,78 +74,32 @@ def main():
     del embedding_model
     weight = np.tanh(weights[0] + weights[1])
 
-    split = 10
+    if 'conjecture_signatures_count_embed.pickle' not in os.listdir(os.path.join(cwd, 'data')):
+        print('Embedding conjecture signatures...')
+        embed_count(path_to_signatures=os.path.join(cwd, 'data', 'conjecture_signatures_count.pickle'), weight=weight)
 
-    for file_name in ['x_{}.npy'.format(n) for n in range(split)] + ['y_{}.npy'.format(n) for n in range(split)]:
+    if 'axiom_signatures_count_embed.pickle' not in os.listdir(os.path.join(cwd, 'data')):
+        print('Embedding axiom signatures...')
+        embed_count(path_to_signatures=os.path.join(cwd, 'data', 'axiom_signatures_count.pickle'), weight=weight)
+
+    if 'conjecture_signatures_int_embed.pickle' not in os.listdir(os.path.join(cwd, 'data')):
+        print('Embedding RNN conjecture signatures...')
+        embed_integers(path_to_signatures=os.path.join(cwd, 'data', 'conjecture_signatures_int.pickle'), weight=weight)
+
+    if 'axiom_signatures_int_embed.pickle' not in os.listdir(os.path.join(cwd, 'data')):
+        print('Embedding RNN axiom signatures...')
+        embed_integers(path_to_signatures=os.path.join(cwd, 'data', 'axiom_signatures_int.pickle'), weight=weight)
+
+    for file_name in ['x.npy', 'y.npy']:
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
             print('Forming training and test sets...')
-            form_train_sets(path_to_data=os.path.join(cwd, 'data'), weight=weight, split=split)
+            form_train_sets(path_to_data=os.path.join(cwd, 'data'), split=10, rnn=False, embedding_len=weight.shape[1])
 
-    test_indices = sample(range(split), split // 10)
-    print('Test chunk indices:', test_indices)
-
-    x_train = np.concatenate([np.load(os.path.join(cwd, 'data', 'x_{}.npy'.format(n)))
-                              for n in range(split) if n not in test_indices])
-    y_train = np.concatenate([np.load(os.path.join(cwd, 'data', 'y_{}.npy'.format(n)))
-                              for n in range(split) if n not in test_indices])
-
-    np.save(os.path.join(cwd, 'data', 'x_train.npy'), x_train)
-    np.save(os.path.join(cwd, 'data', 'y_train.npy'), y_train)
-
-    x_test = np.concatenate([np.load(os.path.join(cwd, 'data', 'x_{}.npy'.format(n)))
-                             for n in range(split) if n in test_indices])
-    y_test = np.concatenate([np.load(os.path.join(cwd, 'data', 'y_{}.npy'.format(n)))
-                             for n in range(split) if n in test_indices])
-
-    np.save(os.path.join(cwd, 'data', 'x_test.npy'), x_test)
-    np.save(os.path.join(cwd, 'data', 'y_test.npy'), y_test)
-
-    print('Number of training pairs:', len(y_train))
-    print('Number of test pairs:', len(y_test))
-
-    # RNN
-    split_rnn = 100
-    print('RNN')
-    for file_name in ['conjecture_signatures_int.pickle', 'axiom_signatures_int.pickle']:
-        if file_name not in os.listdir(os.path.join(cwd, 'data')):
-            print('Tokenizing functions...')
-            convert_to_integers(paths_to_signatures=[os.path.join(cwd, 'data', 'conjecture_signatures.pickle'),
-                                                     os.path.join(cwd, 'data', 'axiom_signatures.pickle')])
-
-    for file_name in ['conjecture_signatures_int_embed.pickle', 'axiom_signatures_int_embed.pickle']:
-        if file_name not in os.listdir(os.path.join(cwd, 'data')):
-            print('Embedding tokenized functions...')
-            embed_integers(paths_to_signatures=[os.path.join(cwd, 'data', 'conjecture_signatures_int.pickle'),
-                                                os.path.join(cwd, 'data', 'axiom_signatures_int.pickle')],
-                           weight=weight)
-
-    for file_name in ['x_rnn_{}.npy'.format(n) for n in range(split_rnn)] + ['y_rnn_{}.npy'.format(n) for n in
-                                                                             range(split_rnn)]:
+    for file_name in ['x_rnn.npy', 'y_rnn.npy']:
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
             print('Forming training and test sets...')
-            form_train_sets_rnn(path_to_data=os.path.join(cwd, 'data'), weight=weight, split=split_rnn, max_len=64)
-
-    test_indices = sample(range(split_rnn), split_rnn // 10)
-    print('Test chunk indices:', test_indices)
-
-    x_train = np.concatenate([np.load(os.path.join(cwd, 'data', 'x_rnn_{}.npy'.format(n)))
-                              for n in range(split_rnn) if n not in test_indices])
-    y_train = np.concatenate([np.load(os.path.join(cwd, 'data', 'y_rnn_{}.npy'.format(n)))
-                              for n in range(split_rnn) if n not in test_indices])
-
-    np.save(os.path.join(cwd, 'data', 'x_rnn_train.npy'), x_train)
-    np.save(os.path.join(cwd, 'data', 'y_rnn_train.npy'), y_train)
-
-    x_test = np.concatenate([np.load(os.path.join(cwd, 'data', 'x_rnn_{}.npy'.format(n)))
-                             for n in range(split_rnn) if n in test_indices])
-    y_test = np.concatenate([np.load(os.path.join(cwd, 'data', 'y_rnn_{}.npy'.format(n)))
-                             for n in range(split_rnn) if n in test_indices])
-
-    np.save(os.path.join(cwd, 'data', 'x_rnn_test.npy'), x_test)
-    np.save(os.path.join(cwd, 'data', 'y_rnn_test.npy'), y_test)
-
-    print('Number of RNN training pairs:', len(y_train))
-    print('Number of RNN test pairs:', len(y_test))
+            form_train_sets(path_to_data=os.path.join(cwd, 'data'), split=20, rnn=True, embedding_len=weight.shape[1],
+                            max_len=64, concat=False)
 
 
 if __name__ == '__main__':
