@@ -9,20 +9,17 @@ import os
 # Third-party modules
 import numpy as np
 import pickle
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, GaussianNoise, LeakyReLU
+from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, GaussianNoise, ReLU
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l2
-import tensorflow as tf
 
 # -- File info --
-__version__ = '0.2.1'
+__version__ = '0.2.3'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-09'
+__date__ = '2019-08-21'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
@@ -38,7 +35,8 @@ parser.add_argument('-lc',
                     '--layers_config',
                     required=False,
                     help='Number of units in each layer (separate with commas).',
-                    type=str)
+                    type=str,
+                    default=None)
 parser.add_argument('-r',
                     '--res',
                     required=False,
@@ -67,20 +65,17 @@ def build_premise_selection_model(input_shape, layers_config=None, res=False):
     x = Flatten()(model_input)
 
     for n in range(len(layers_config)):
-        x = Dense(layers_config[n], name='dense_' + str(n))(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(0.2)(x)
+        x = Dense(layers_config[n], name='dense_' + str(n), activation='relu')(x)
         x = Dropout(0.5)(x)
         if res:
             y = Dense(layers_config[n], name='res_dense_' + str(n))(x)
             x = Add(name='add_' + str(n))([x, y])
-            x = BatchNormalization()(x)
-            x = LeakyReLU(0.2)(x)
+            x = ReLU()(x)
             x = Dropout(0.5)(x)
 
-        model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
+    model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
 
-        model = Model(model_input, model_output)
+    model = Model(model_input, model_output)
 
     return model
 
@@ -99,7 +94,10 @@ def main():
         exit('Path to data directory is not a valid path!')
 
     # Conversions
-    config = [int(config) for config in layers_config.split(',')]
+    if layers_config is None:
+        config = []
+    else:
+        config = [int(config) for config in layers_config.split(',')]
     if res.lower() in ['t', 'true', '1']:
         res = True
     else:
