@@ -13,7 +13,7 @@ from tensorflow.keras.models import load_model, Model
 # Proprietary modules
 from token_embedding import embed_functions
 from utils import (calculate_context_distribution, convert_to_count_signatures, convert_to_integers, embed_count,
-                   embed_integers, extract_premises, form_train_sets)
+                   embed_integers, extract_premises, form_train_sets, get_test_indices)
 
 # -- File info --
 __version__ = '0.1.0'
@@ -92,14 +92,48 @@ def main():
 
     for file_name in ['x.npy', 'y.npy']:
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
-            print('Forming training and test sets...')
+            print('Converting the data into numpy arrays...')
             form_train_sets(path_to_data=os.path.join(cwd, 'data'), split=10, rnn=False, embedding_len=weight.shape[1])
 
-    for file_name in ['x_rnn.npy', 'y_rnn.npy']:
+    split = 20
+    for file_name in ['x_rnn_{}.npy'.format(n) for n in range(split)] +['y_rnn_{}.npy'.format(n) for n in range(split)]:
         if file_name not in os.listdir(os.path.join(cwd, 'data')):
-            print('Forming training and test sets...')
-            form_train_sets(path_to_data=os.path.join(cwd, 'data'), split=20, rnn=True, embedding_len=weight.shape[1],
-                            max_len=64, concat=False)
+            print('Converting the data into numpy arrays (RNN)...')
+            form_train_sets(path_to_data=os.path.join(cwd, 'data'), split=split, rnn=True,
+                            embedding_len=weight.shape[1], max_len=64, concat=False)
+
+    print('Forming training and test sets...')
+    x = np.load('data/x.npy', mmap_mode='r')
+    y = np.load('data/y.npy', mmap_mode='r')
+
+    test_indices = get_test_indices(os.path.join(cwd, 'data'))
+    train_indices = [n for n in range(len(x)) if n not in test_indices]
+
+    np.save('data/x_train.npy', x[train_indices])
+    np.save('data/x_test.npy', x[test_indices])
+    np.save('data/y_train.npy', y[train_indices])
+    np.save('data/y_test.npy', y[test_indices])
+
+    print('Forming training and test sets (RNN)...')
+    start = 0
+    for k in range(split):
+        x = np.load('data/x_rnn_{}.npy'.format(k), mmap_mode='r')
+        y = np.load('data/y_rnn_{}.npy'.format(k), mmap_mode='r')
+        np.save('data/x_train_rnn_{}.npy'.format(k), x[[n for n in range(len(x)) if n+start in train_indices]])
+        np.save('data/y_train_{}.npy'.format(k), y[[n for n in range(len(y)) if n+start in train_indices]])
+
+        if k == 0:
+            np.save('data/x_test_rnn.npy', x[[n for n in range(len(x)) if n+start in test_indices]])
+            np.save('data/y_test_rnn.npy', y[[n for n in range(len(y)) if n+start in test_indices]])
+        else:
+            x_test = np.load('data/x_test_rnn.npy', mmap_mode='r')
+            x_test = np.concatenate([x_test, x[[n for n in range(len(x)) if n+start in test_indices]]])
+            y_test = np.load('data/y_test_rnn.npy', mmap_mode='r')
+            y_test = np.concatenate([y_test, y[[n for n in range(len(y)) if n+start in test_indices]]])
+            np.save('data/x_test_rnn.npy', x_test)
+            np.save('data/y_test_rnn.npy', y_test)
+
+        start += len(x)
 
 
 if __name__ == '__main__':
