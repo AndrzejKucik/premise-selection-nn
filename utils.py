@@ -5,7 +5,7 @@
 # Built-in modules
 import os
 from datetime import timedelta
-from random import shuffle
+from random import sample
 from time import time
 
 # Third-party modules
@@ -15,12 +15,12 @@ from lark import Lark, Transformer
 from tqdm import tqdm
 
 # -- File info --
-__version__ = '0.1.0'
+__version__ = '0.1.3'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-09'
+__date__ = '2019-08-21'
 
 tptp_parser = Lark(r"""
     ?tptp_file : tptp_input*
@@ -768,3 +768,28 @@ def form_train_sets(path_to_data, split=10, rnn=False, embedding_len=256, max_le
         else:
             np.save('data/x{}_{}.npy'.format(name, n), x_chunk[1:])
             np.save('data/y{}_{}.npy'.format(name, n), y_chunk[1:])
+
+
+def get_test_indices(path_to_data, split=10):
+
+    with open(os.path.join(path_to_data, 'conjecture_signatures.pickle'), 'rb') as dictionary:
+        conjecture_signatures = pickle.load(dictionary)
+    with open(os.path.join(path_to_data, 'useful_axioms.pickle'), 'rb') as dictionary:
+        useful_axioms = pickle.load(dictionary)
+    with open(os.path.join(path_to_data, 'useless_axioms.pickle'), 'rb') as dictionary:
+        useless_axioms = pickle.load(dictionary)
+
+    conjecture_names = sorted(list(conjecture_signatures.keys()))
+
+    test_conjectures = sorted(sample(conjecture_names, len(conjecture_names)//split))
+
+    test_indices = []
+    for conjecture in test_conjectures:
+        start = conjecture_names.index(conjecture)
+        stop = start + 1
+        stop += len(useful_axioms[conjecture])
+        stop += len(useless_axioms[conjecture])
+        test_indices += list(range(start, stop))
+
+    return test_indices
+
