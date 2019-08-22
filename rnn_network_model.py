@@ -2,19 +2,35 @@
 
 """Premise selection RNN model."""
 
-# Build-in modules
+# -- Build-in modules --
 from argparse import ArgumentParser
 from random import shuffle
 import os
 
-# Third-party modules
+# -- Third-party modules --
 import numpy as np
 import pickle
 import tensorflow as tf
 from tensorflow.keras.layers import (Add, BatchNormalization, Bidirectional, Input, Concatenate, Dense, Dropout,
-                                     Flatten, Layer, ReLU, LSTM, Reshape)
+                                     Flatten, Layer, ReLU, LSTM, Reshape, GaussianNoise)
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l1_l2, l2, l1
+
+def orthogonal_regularizer(scale):
+    def ortho_reg(weight):
+        weight = tf.reshape(weight, (-1, weight.shape[-1]))
+
+        weight = tf.matmul(weight, weight, transpose_a=True)
+
+        weight = weight - tf.eye(weight.shape[0])
+
+        return scale * tf.nn.l2_loss(weight)
+
+    return ortho_reg
+
+reg = l1_l2(l1=0.01, l2=0.01)
+bias_reg = l1_l2(l1=0.01, l2=0.01)
+dense_bias_reg = l1_l2(l1=0.01, l2=0.01)
 
 # -- File info --
 __version__ = '0.1.0'
@@ -67,8 +83,7 @@ class Split(Layer):
         super(Split, self).__init__(**kwargs)
 
     def call(self, inputs):
-        # Expect the input to be 3D and mask to be 2D, split the input tensor into 2
-        # among the `axis`.
+        # Expect the input to be 3D and mask to be 2D, split the input tensor into 2 among the `axis`.
         return tf.split(inputs, self.num_splits, axis=self.axis)
 
 
@@ -78,25 +93,30 @@ def build_rnn_model(input_shape, layers_config=None, res=False):
 
     model_input = Input(shape=input_shape)
 
-    c, a = Split(num_splits=2, axis=1)(model_input)
+    x = GaussianNoise(stddev=1)(model_input)
+
+    c, a = Split(num_splits=2, axis=1)(x)
 
     a = Reshape((64, 256))(a)
     c = Reshape((64, 256))(c)
 
-    a = Bidirectional(LSTM(128, return_sequences=True))(a)
-    a = Bidirectional(LSTM(128))(a)
+    a = Bidirectional(LSTM(128, return_sequences=True, recurrent_regularizer=reg, bias_regularizer=bias_reg))(a)
+    a = Bidirectional(LSTM(128, recurrent_regularizer=reg, bias_regularizer=bias_reg))(a)
 
-    c = Bidirectional(LSTM(128, return_sequences=True))(c)
-    c = Bidirectional(LSTM(128))(c)
+    c = Bidirectional(LSTM(128, return_sequences=True, recurrent_regularizer=reg, bias_regularizer=bias_reg))(c)
+    c = Bidirectional(LSTM(128, recurrent_regularizer=reg, bias_regularizer=bias_reg))(c)
 
     x = Concatenate()([c, a])
 
     for n in range(len(layers_config)):
-        x = Dense(layers_config[n], name='dense_' + str(n), activation='relu')(x)
-        x = Dropout(0.5)(x)
+        x = Dense(layers_config[n], name='dense_' + str(n), bias_regularizer=dense_bias_reg)(x)
+        x = BatchNormalization()(x)
+        x = ReLU()(x)
+        x = Dropout(0.3)(x)
         if res:
-            y = Dense(layers_config[n], name='res_dense_' + str(n))(x)
+            y = Dense(layers_config[n], name='res_dense_' + str(n), bias_regularizer=dense_bias_reg)(x)
             x = Add(name='add_' + str(n))([x, y])
+            x = BatchNormalization()(x)
             x = ReLU()(x)
             x = Dropout(0.5)(x)
 
@@ -128,15 +148,17 @@ def main():
 
     model = build_rnn_model(input_shape=(2, 64, 256), layers_config=config, res=res)
     model.summary()
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer='RMSprop', metrics=['accuracy'])
 
     main_history = {'loss': [], 'accuracy': [], 'val_loss': [], 'val_accuracy': []}
     for epoch in range(epochs):
+        print('Epoch {}/{}'.format(epoch + 1, epochs))
         split = list(range(10))
         shuffle(split)
         k = 0
         loss, accuracy, val_loss, val_accuracy = 0, 0, 0, 0
         for n in split:
+            print('Chunk', n)
             x_train = np.load(os.path.join(data_dir, 'x_train_rnn_{}.npy'.format(n)), mmap_mode='r')
             y_train = np.load(os.path.join(data_dir, 'y_train_rnn_{}.npy'.format(n)), mmap_mode='r')
             k += len(y_train) // batch_size
