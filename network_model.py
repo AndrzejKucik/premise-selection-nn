@@ -14,12 +14,12 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
 # -- File info --
-__version__ = '0.2.3'
+__version__ = '0.2.4'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-21'
+__date__ = '2019-08-23'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')

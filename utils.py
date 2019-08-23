@@ -22,6 +22,7 @@ __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
 __date__ = '2019-08-21'
 
+# TPTP parser
 tptp_parser = Lark(r"""
     ?tptp_file : tptp_input*
     ?tptp_input : annotated_formula | include
@@ -406,7 +407,7 @@ tptp_parser = Lark(r"""
 
     """, start='tptp_file')
 
-
+# TPTP transformer
 class list_of_functions(Transformer):
     fof_annotated = lambda self, a: tuple([a[0], a[2]])
     fof_formula = lambda self, a: a
@@ -493,19 +494,43 @@ class list_of_functions(Transformer):
 
 
 def flatten_list(lst):
+    """Function flattening list of lists.
+       Arguments:
+       lst       - list (of lists).
+
+       Returns:
+       flattened - flattened list."""
+
     flattened = []
     for l in lst:
         if isinstance(l, list):
             flattened += flatten_list(l)
         else:
             flattened.append(l)
+
     return flattened
 
 
 def extract_functions(tptp_file):
+    """Function extracting functional symbols from a TPTP FOF formula.
+       Arguments:
+       tptp_file         - TPTP file, that can be parsed by a TPTP parser.
+
+       Returns:
+       premise_name      - name of the TPTP FOF formula,
+       premise_functions - list of functional symbols (expressed as strings) within the scope of the TPTP FOF formula.
+    """
+
+    # Parse TPTP file
     tree = tptp_parser.parse(tptp_file)
+
+    # Transform it into a list of functions
     list_of_fun = list_of_functions().transform(tree)
+
+    # The first element on the list is the name of the TPTP formula
     premise_name = list_of_fun[0]
+
+    # The second element is a list (of lists) of functional symbols, which we flatten to be a list of strings.
     premise_functions = flatten_list(list_of_fun[1])
 
     return premise_name, premise_functions
@@ -514,8 +539,8 @@ def extract_functions(tptp_file):
 def extract_premises(path_to_premises, save_dir):
     """Function converting nndata from https://github.com/JUrban/deepmath to dictionaries.
        Arguments:
-       path_to_premises - path to where nndata is saved,
-       save_dir         - path to where to save the dictionaries.
+       path_to_premises      - path to where nndata is saved,
+       save_dir              - path to where to save the dictionaries.
 
        Returns:
        conjecture_signatures - dictionary with conjectures as keys and their functional signatures as values,
@@ -570,6 +595,7 @@ def extract_premises(path_to_premises, save_dir):
     # Rec ord end time
     end_time = time()
 
+    # Save the data as dictionaries
     with open(os.path.join(save_dir, 'conjecture_signatures.pickle'), 'wb') as dictionary:
         pickle.dump(conjecture_signatures, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -582,15 +608,27 @@ def extract_premises(path_to_premises, save_dir):
     with open(os.path.join(save_dir, 'useless_axioms.pickle'), 'wb') as dictionary:
         pickle.dump(useless_axioms, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # Print some statistics
     print('Formatting time:', str(timedelta(seconds=end_time - start_time)), 'hours.')
     print('Total number of conjectures:', len(conjecture_signatures))
     print('Total number of axioms:', len(axiom_signatures))
 
 
 def get_all_used_functions(paths_to_signatures):
+    """Function returning the list of all functional signatures (expressed as strings) within the scope of some FOF
+       formulae.
+       Arguments:
+       paths_to_signatures - list of paths or a path to a signature file.
+
+       Return:
+       all_used_functions  - alphabetically sorted list of all functional signatures (strings) within files stored at
+                             paths_to_signatures.
+    """
+
     if not isinstance(paths_to_signatures, list):
         paths_to_signatures = [paths_to_signatures]
 
+    # Functional symbols are collected in the form of a set, to avoid repetitions
     all_used_functions = set()
 
     for path in paths_to_signatures:
@@ -605,9 +643,16 @@ def get_all_used_functions(paths_to_signatures):
 
 
 def convert_to_integers(paths_to_signatures):
+    """Function converting list of functions expressed as strings to a list of functions expressed as integers.
+       Arguments:
+       path_to_signatures - list of paths or a path to dictionary/-ies with FOF formulae names as keys and list of
+                            functional symbols (expressed as strings) as values.
+    """
+
     if not isinstance(paths_to_signatures, list):
         paths_to_signatures = [paths_to_signatures]
 
+    # Get all used functions to know how many integers are needed to label the functional symbols.
     all_used_functions = get_all_used_functions(paths_to_signatures)
 
     for path in paths_to_signatures:
@@ -623,10 +668,17 @@ def convert_to_integers(paths_to_signatures):
 
 
 def count_functions(signature, functions):
+    """Function counting occurrences of a given functional symbol within the scope of a functional signature.
+       Arguments:
+       signature - list of functional symbols (expressed as strings),
+       functions - list of all available functional symbols (also as strings).
+    """
+
     return [signature.count(functions[n]) for n in range(len(functions))]
 
 
 def convert_to_count_signatures(paths_to_signatures):
+
     if not isinstance(paths_to_signatures, list):
         paths_to_signatures = [paths_to_signatures]
 
