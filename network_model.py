@@ -23,38 +23,45 @@ __date__ = '2019-08-21'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
-
-# Argument for recording path (SEF format)
+# - Path to data directory
 parser.add_argument('-d',
                     '--data_dir',
                     required=True,
                     help='Path to training and test data.',
                     type=str,
                     default=None)
-parser.add_argument('-lc',
-                    '--layers_config',
-                    required=False,
-                    help='Number of units in each layer (separate with commas).',
-                    type=str,
-                    default=None)
-parser.add_argument('-r',
-                    '--res',
-                    required=False,
-                    help='Residual connection?',
-                    type=str,
-                    default='False')
-parser.add_argument('-e',
-                    '--epochs',
-                    required=False,
-                    help='Number of epochs.',
-                    type=int,
-                    default=10)
+# - Training parameters
 parser.add_argument('-bs',
                     '--batch_size',
                     required=False,
                     help='Batch size.',
                     type=int,
                     default=32)
+parser.add_argument('-e',
+                    '--epochs',
+                    required=False,
+                    help='Number of epochs.',
+                    type=int,
+                    default=10)
+parser.add_argument('-val',
+                    '--validation',
+                    required=False,
+                    help='Validation split',
+                    type=float,
+                    default=0)
+# - Model architecture parameters
+parser.add_argument('-lc',
+                    '--layers_config',
+                    required=False,
+                    help='Number of units in each layer (separate with commas).',
+                    type=str,
+                    default=None)
+parser.add_argument('-res',
+                    '--res',
+                    required=False,
+                    help='Residual connection?',
+                    type=str,
+                    default='False')
 
 
 def build_premise_selection_model(input_shape, layers_config=None, res=False):
@@ -83,25 +90,19 @@ def build_premise_selection_model(input_shape, layers_config=None, res=False):
 def main():
     # Arguments
     args = vars(parser.parse_args())
+    # - Path to data directory
     data_dir = args['data_dir']
-    layers_config = args['layers_config']
-    res = args['res']
-    epochs = args['epochs']
+    # - Training parameters
     batch_size = args['batch_size']
+    epochs = args['epochs']
+    val = args['validation'] if args['validation'] != 0 else None
+    # - Model architecture parameters
+    layers_config = [] if (args['layers_config'] is None) else [int(unit) for unit in args['layers_config'].split(',')]
+    res = True if (args['res'].lower() in ['t', 'true', '1']) else False
 
     # Checks
     if not os.path.isdir(data_dir):
         exit('Path to data directory is not a valid path!')
-
-    # Conversions
-    if layers_config is None:
-        config = []
-    else:
-        config = [int(config) for config in layers_config.split(',')]
-    if res.lower() in ['t', 'true', '1']:
-        res = True
-    else:
-        res = False
 
     # Data
     x_train = np.load(os.path.join(data_dir, 'x_train.npy'))
@@ -113,7 +114,7 @@ def main():
     assert len(x_train) == len(y_train)
     assert len(x_test) == len(x_test)
 
-    # Regularize the data. (OPTIONAL)
+    # Regularize the data
     mean = x_train.mean(axis=0)
     x_train -= mean
     x_test -= mean
@@ -123,22 +124,21 @@ def main():
     x_test /= std
 
     # Model
-    model = build_premise_selection_model(input_shape=x_train.shape[1:], layers_config=config, res=res)
+    model = build_premise_selection_model(input_shape=x_train.shape[1:], layers_config=layers_config, res=res)
     model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001), metrics=['accuracy'])
     model.summary()
 
     # Train model
-    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=0.1)
-
-    # Save trained model
-    model.save(
-        'models/epochs={}_batch_size={}_layers_config={}_res={}.h5'.format(epochs, batch_size, layers_config, res))
+    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=val)
 
     # Save history
-    with open('histories/epochs={}_batch_size={}_layers_config={}_res={}.pickle'.format(epochs, batch_size,
-                                                                                        layers_config, res), 'wb') \
-            as dictionary:
+    with open('histories/batch_size={}_epochs={}_val={}'.format(batch_size, epochs, val)
+              + 'layers_config={}_res={}.pickle'.format(layers_config, res), 'wb') as dictionary:
         pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Save trained model
+    model.save('models/rnn_epochs={}_batch_size={}_val={}'.format(batch_size, epochs, val)
+               + 'layers_config={}_res={}.h5'.format(layers_config, res))
 
     # Test model
     test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
