@@ -15,12 +15,12 @@ from lark import Lark, Transformer
 from tqdm import tqdm
 
 # -- File info --
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-21'
+__date__ = '2019-08-23'
 
 # TPTP parser
 tptp_parser = Lark(r"""
