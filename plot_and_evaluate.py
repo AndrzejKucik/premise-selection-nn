@@ -67,6 +67,8 @@ def get_title(path):
     if 'rnn' in path:
         title += ' (RNN)'
 
+    title += ' model'
+
     return title
 
 
@@ -94,34 +96,34 @@ def plot_graphs(path_to_history):
         title = get_title(path_to_history)
 
         # Loss
-        plt.figure(figsize=(8, 6))
+        plt.figure(figsize=(16, 12))
         plt.plot(epochs, loss, 'ro', label='Training loss')
         title_loss = 'Training '
         if val_loss is not None:
             plt.plot(epochs, val_loss, 'r', label='Validation loss')
             title_loss += 'and validation '
         title_loss += 'loss for ' + title + ' model.'
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.title(title_loss)
+        plt.xlabel('Epochs', fontsize=16)
+        plt.ylabel('Loss', fontsize=16)
+        plt.title(title_loss, fontsize=20)
         plt.grid()
-        plt.legend()
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'.png')
+        plt.legend(fontsize=16)
+        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'_loss.png', bbox_inches='tight')
 
         # Accuracy
-        plt.figure(figsize=(8, 6))
+        plt.figure(figsize=(16, 12))
         plt.plot(epochs, acc, 'bo', label='Training accuracy')
         title_acc = 'Training '
         if val_acc is not None:
             plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
             title_acc += 'and validation '
         title_acc += 'accuracy for ' + title + ' model.'
-        plt.xlabel('Epochs')
-        plt.ylabel('Accuracy')
-        plt.title(title_acc)
+        plt.xlabel('Epochs', fontsize=16)
+        plt.ylabel('Accuracy', fontsize=16)
+        plt.title(title_acc, fontsize=20)
         plt.grid()
-        plt.legend()
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'.png')
+        plt.legend(fontsize=16)
+        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'_accuracy.png', bbox_inches='tight')
 
 
 def test_models(path_to_model, x_test, y_test):
