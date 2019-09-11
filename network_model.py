@@ -180,7 +180,7 @@ def main():
         pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Save trained model
-    model.save('models/rnn_epochs={}_batch_size={}_val={}_'.format(batch_size, epochs, val)
+    model.save('models/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
                + 'layers_config={}_res={}_reg={}.h5'.format(layers_config, res, reg))
 
     # Test model
