@@ -18,12 +18,12 @@ from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.regularizers import l1_l2
 
 # -- File info --
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-09-11'
+__date__ = '2019-09-13'
 
 
 # Split layer
@@ -322,7 +322,7 @@ def main():
             pickle.dump(main_history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Save trained model
-    model.save('models/rnn_epochs={}_batch_size={}_val={}_'.format(batch_size, epochs, val)
+    model.save('models/rnn_batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
                + 'bi={}_layers_config={}_rec={}_res={}_reg={}.h5'.format(bi, layers_config, rec, res, reg))
 
     # Test model
