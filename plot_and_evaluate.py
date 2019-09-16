@@ -44,95 +44,116 @@ parser.add_argument('-d',
                     help='Path to the data directory.',
                     type=str,
                     default=None)
+parser.add_argument('-pd',
+                    '--plot_dir',
+                    required=False,
+                    help='Path to the plots directory.',
+                    type=str,
+                    default=None)
 
 
-def get_title(path):
-    if 'embedding' in path:
-        title = 'the embedding'
+def get_title(file_name):
+    if 'embedding' in file_name:
+        title = 'embedding'
     else:
-        title = path.split('layers_config=')[-1]
-        if 'res=True' in title:
+        title = [lc for lc in file_name.split('_') if 'config' in lc.lower()][0].split('=')[-1][1:-1].replace(' ', '')
+
+        if 'res=True' in file_name:
             res = True
         else:
             res = False
 
-        title = title.split('_')[0]
-
         if res:
             title = title.split(',')
-            title = u"\u00D7".join([number + '(+' + number + ')' for number in title])
+            title = u'\u00D7'.join([number + '(+' + number + ')' for number in title])
         else:
-            title = title.replace(',', u"\u00D7")
+            title = title.replace(',', u'\u00D7')
 
-    if 'rnn' in path:
-        title += ' (RNN)'
+        if title == '':
+            title = 'logistic regression'
+        else:
+            title += ' hidden units'
+
+        if 'rnn=True' in file_name:
+            title += ' (RNN)'
 
     title += ' model'
 
     return title
 
 
-def plot_graphs(path_to_history):
-    try:
-        os.mkdir('plots')
-    except OSError:
-        pass
-
+def plot_graphs(path_to_history, path_to_plots):
     with open(path_to_history, 'rb') as dictionary:
         history = pickle.load(dictionary)
 
-        loss = history['loss']
-        acc = history['accuracy']
+    loss = history['loss']
+    acc = history['accuracy']
 
-        try:
-            val_loss = history['val_loss']
-            val_acc = history['val_accuracy']
-        except KeyError:
-            val_loss = None
-            val_acc = None
+    try:
+        val_loss = history['val_loss']
+        val_acc = history['val_accuracy']
+    except KeyError:
+        val_loss = None
+        val_acc = None
 
-        epochs = range(1, len(loss) + 1)
+    epochs = range(1, len(loss) + 1)
 
-        title = get_title(path_to_history)
+    file_name = ''.join(os.path.basename(path_to_history).split('.')[:-1])
+    plot_title = get_title(file_name)
 
-        # Loss
-        plt.figure(figsize=(16, 12))
-        plt.plot(epochs, loss, 'ro', label='Training loss')
-        title_loss = 'Training '
-        if val_loss is not None:
-            plt.plot(epochs, val_loss, 'r', label='Validation loss')
-            title_loss += 'and validation '
-        title_loss += 'loss for ' + title + ' model.'
-        plt.xlabel('Epochs', fontsize=16)
-        plt.ylabel('Loss', fontsize=16)
-        plt.title(title_loss, fontsize=20)
-        plt.grid()
-        plt.legend(fontsize=16)
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'_loss.png', bbox_inches='tight')
+    # Loss
+    plt.figure(figsize=(16, 12))
+    plt.plot(epochs, loss, 'ro', label='Training loss')
+    title_loss = 'Training '
+    if val_loss is not None:
+        plt.plot(epochs, val_loss, 'r', label='Validation loss')
+        title_loss += 'and validation '
+    title_loss += 'loss for the ' + plot_title
+    plt.xlabel('Epochs', fontsize=16)
+    plt.ylabel('Loss', fontsize=16)
+    plt.title(title_loss, fontsize=20)
+    plt.grid()
+    plt.legend(fontsize=16)
+    plt.savefig(fname=os.path.join(path_to_plots, file_name) + '_loss.png', bbox_inches='tight')
+    plt.close()
 
-        # Accuracy
-        plt.figure(figsize=(16, 12))
-        plt.plot(epochs, acc, 'bo', label='Training accuracy')
-        title_acc = 'Training '
-        if val_acc is not None:
-            plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
-            title_acc += 'and validation '
-        title_acc += 'accuracy for ' + title + ' model.'
-        plt.xlabel('Epochs', fontsize=16)
-        plt.ylabel('Accuracy', fontsize=16)
-        plt.title(title_acc, fontsize=20)
-        plt.grid()
-        plt.legend(fontsize=16)
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'_accuracy.png', bbox_inches='tight')
+    # Accuracy
+    plt.figure(figsize=(16, 12))
+    plt.plot(epochs, acc, 'bo', label='Training accuracy')
+    title_acc = 'Training '
+    if val_acc is not None:
+        plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
+        title_acc += 'and validation '
+    title_acc += 'accuracy for the ' + plot_title
+    plt.xlabel('Epochs', fontsize=16)
+    plt.ylabel('Accuracy', fontsize=16)
+    plt.title(title_acc, fontsize=20)
+    plt.grid()
+    plt.legend(fontsize=16)
+    plt.savefig(fname=os.path.join(path_to_plots, file_name) + '_accuracy.png', bbox_inches='tight')
+    plt.close()
 
 
 def test_models(path_to_model, x_test, y_test):
     model = load_model(path_to_model)
+    model.summary()
 
     title = get_title(path_to_model)
 
     test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
-    print('Test loss {}, test accuracy: {}% for {} model.'.format(round(test_loss, 4), round(100 * test_acc, 2), title))
+    y_pred = model.predict(x_test)[:, 0]
+
+    true_positive = np.dot((y_pred >= .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
+    true_negative = np.dot((y_pred < .5).astype('float32'), (y_test == False).astype('float32')) / len(y_test)
+    false_positive = np.dot((y_pred >= .5).astype('float32'), (y_test == False).astype('float32')) / len(y_test)
+    false_negative = np.dot((y_pred < .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
+
+    print('Test loss {}, test accuracy: {}% for {}.'.format(round(test_loss, 4), round(100 * test_acc, 2), title))
+    print('Confusion matrix for {}: TP={}%, TN={}%, FP={}%, FN={}%.'.format(title,
+                                                                            round(100 * true_positive, 2),
+                                                                            round(100 * true_negative, 2),
+                                                                            round(100 * false_positive, 2),
+                                                                            round(100 * false_negative, 2)))
 
 
 def main():
@@ -141,10 +162,17 @@ def main():
     hist_dir = args['hist_dir']
     model_dir = args['model_dir']
     data_dir = args['data_dir']
+    plot_dir = args['plot_dir']
+    if plot_dir is None:
+        try:
+            os.mkdir('plots')
+        except OSError:
+            pass
+        plot_dir = os.path.join(os.getcwd(), 'plots')
 
     if hist_dir is not None:
         for file in os.listdir(hist_dir):
-            plot_graphs(os.path.join(hist_dir, file))
+            plot_graphs(path_to_history=os.path.join(hist_dir, file), path_to_plots=plot_dir)
 
     if not (data_dir is None or model_dir is None):
         mean = np.load(os.path.join(data_dir, 'x_train.npy'), mmap_mode='r').mean(axis=0)
@@ -158,7 +186,7 @@ def main():
             try:
                 test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
             except ValueError:
-                pass
+               pass
 
 
 if __name__ == '__main__':
