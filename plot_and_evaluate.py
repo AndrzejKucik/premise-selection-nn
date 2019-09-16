@@ -1,162 +1,191 @@
 #!/usr/bin/env python3.7
 
-"""Plot training and validation losses and accuracy."""
+"""Premise selection model."""
 
-# Built-in modules
-import os
+# -- Build-in modules --
 from argparse import ArgumentParser
+import os
 
-# Third-party modules
-import matplotlib.pyplot as plt
+# -- Third-party modules --
 import numpy as np
 import pickle
-from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, ReLU
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l1_l2
 
 # -- File info --
-__version__ = '0.1.0'
+__version__ = '0.2.6'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-21'
+__date__ = '2019-09-16'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
-
-# Argument for recording path (SEF format)
-parser.add_argument('-hd',
-                    '--hist_dir',
-                    required=False,
-                    help='Path to the histories directory.',
-                    type=str,
-                    default=None)
-
-parser.add_argument('-m',
-                    '--model_dir',
-                    required=False,
-                    help='Path to the models directory.',
-                    type=str,
-                    default=None)
-
+# - Path to data directory
 parser.add_argument('-d',
                     '--data_dir',
-                    required=False,
-                    help='Path to the data directory.',
+                    required=True,
+                    help='Path to training and test data.',
                     type=str,
                     default=None)
+# - Training parameters
+parser.add_argument('-bs',
+                    '--batch_size',
+                    required=False,
+                    help='Batch size.',
+                    type=int,
+                    default=32)
+parser.add_argument('-e',
+                    '--epochs',
+                    required=False,
+                    help='Number of epochs.',
+                    type=int,
+                    default=10)
+parser.add_argument('-val',
+                    '--validation',
+                    required=False,
+                    help='Validation split',
+                    type=float,
+                    default=0)
+# - Model architecture parameters
+parser.add_argument('-lc',
+                    '--layers_config',
+                    required=False,
+                    help='Number of units in each layer (separate with commas).',
+                    type=str,
+                    default=None)
+parser.add_argument('-res',
+                    '--res',
+                    required=False,
+                    help='Residual connection?',
+                    type=str,
+                    default='False')
+parser.add_argument('-reg',
+                    '--reg',
+                    required=False,
+                    help='Regularize?',
+                    type=str,
+                    default='False')
 
 
-def get_title(path):
-    if 'embedding' in path:
-        title = 'the embedding'
+def build_premise_selection_model(input_shape: tuple, layers_config: list = None, res: bool = False, reg: bool = False):
+    """
+    Premise selection model.
+
+    Parameters
+    ----------
+    input_shape : tuple
+        shape of the input premises; the length of the conjecture vector plus the length of the axiom vector,
+    layers_config : list
+        configuration of the dense layers; the i-th element of layers_config correspond to the number of dense units
+        of the i-th dense layer,
+    res : bool
+        True if each dense layer is to be followed by a residual connection with another dense layer, with the same
+        number of parameters,
+    reg : bool
+        True if there is to be a regularization (batch normalization, bias l1_l2 regularizer, dropout).
+
+    Returns
+    -------
+    model
+        Keras model; premise selection network.
+    """
+    if layers_config is None:
+        layers_config = []
+
+    if reg:
+        regularizer = reg = l1_l2(l1=0.01, l2=0.01)
     else:
-        title = path.split('layers_config=')[-1]
-        if 'res=True' in title:
-            res = True
+        regularizer = None
+
+    model_input = Input(shape=input_shape, name='input_layer')
+    x = Flatten(name='flatten')(model_input)
+
+    for n in range(len(layers_config)):
+        x = Dense(layers_config[n], bias_regularizer=regularizer, name='dense_' + str(n))(x)
+        if reg:
+            x = BatchNormalization(name='batch_normalization_' + str(n))(x)
+            x = ReLU(name='re_lu_' + str(n))(x)
+            x = Dropout(0.5, name='dropout_' + str(n))(x)
         else:
-            res = False
-
-        title = title.split('_')[0]
-
+            x = ReLU(name='re_lu_' + str(n))(x)
         if res:
-            title = title.split(',')
-            title = u"\u00D7".join([number + '(+' + number + ')' for number in title])
-        else:
-            title = title.replace(',', u"\u00D7")
+            y = Dense(layers_config[n], bias_regularizer=regularizer, name='res_dense_' + str(n))(x)
+            x = Add(name='add_' + str(n))([x, y])
+            if reg:
+                x = BatchNormalization(name='res_batch_normalization_' + str(n))(x)
+                x = ReLU(name='res_re_lu_' + str(n))(x)
+                x = Dropout(0.5, name='res_dropout_' + str(n))(x)
+            else:
+                x = ReLU(name='res_re_lu_' + str(n))(x)
 
-    if 'rnn' in path:
-        title += ' (RNN)'
+    model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
 
-    return title
+    model = Model(model_input, model_output, name='premise_selection_model')
 
-
-def plot_graphs(path_to_history):
-    try:
-        os.mkdir('plots')
-    except OSError:
-        pass
-
-    with open(path_to_history, 'rb') as dictionary:
-        history = pickle.load(dictionary)
-
-        loss = history['loss']
-        acc = history['accuracy']
-
-        try:
-            val_loss = history['val_loss']
-            val_acc = history['val_accuracy']
-        except KeyError:
-            val_loss = None
-            val_acc = None
-
-        epochs = range(1, len(loss) + 1)
-
-        title = get_title(path_to_history)
-
-        # Loss
-        plt.figure(figsize=(8, 6))
-        plt.plot(epochs, loss, 'ro', label='Training loss')
-        title_loss = 'Training '
-        if val_loss is not None:
-            plt.plot(epochs, val_loss, 'r', label='Validation loss')
-            title_loss += 'and validation '
-        title_loss += 'loss for ' + title + ' model.'
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.title(title_loss)
-        plt.grid()
-        plt.legend()
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'.png')
-
-        # Accuracy
-        plt.figure(figsize=(8, 6))
-        plt.plot(epochs, acc, 'bo', label='Training accuracy')
-        title_acc = 'Training '
-        if val_acc is not None:
-            plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
-            title_acc += 'and validation '
-        title_acc += 'accuracy for ' + title + ' model.'
-        plt.xlabel('Epochs')
-        plt.ylabel('Accuracy')
-        plt.title(title_acc)
-        plt.grid()
-        plt.legend()
-        plt.savefig(fname='plots/'+title.lower().replace(' ', '_')+'.png')
-
-
-def test_models(path_to_model, x_test, y_test):
-    model = load_model(path_to_model)
-
-    title = get_title(path_to_model)
-
-    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
-    print('Test loss {}, test accuracy: {}% for {} model.'.format(round(test_loss, 4), round(100 * test_acc, 2), title))
+    return model
 
 
 def main():
     # Arguments
     args = vars(parser.parse_args())
-    hist_dir = args['hist_dir']
-    model_dir = args['model_dir']
+    # - Path to data directory
     data_dir = args['data_dir']
+    # - Training parameters
+    batch_size = args['batch_size']
+    epochs = args['epochs']
+    val = args['validation'] if args['validation'] != 0 else None
+    # - Model architecture parameters
+    layers_config = [] if (args['layers_config'] is None) else [int(unit) for unit in args['layers_config'].split(',')]
+    res = True if (args['res'].lower() in ['t', 'true', '1']) else False
+    reg = True if (args['reg'].lower() in ['t', 'true', '1']) else False
 
-    if hist_dir is not None:
-        for file in os.listdir(hist_dir):
-            plot_graphs(os.path.join(hist_dir, file))
+    # Checks
+    if not os.path.isdir(data_dir):
+        exit('Path to data directory is not a valid path!')
 
-    if not (data_dir is None or model_dir is None):
-        mean = np.load(os.path.join(data_dir, 'x_train.npy'), mmap_mode='r').mean(axis=0)
-        std = np.load(os.path.join(data_dir, 'x_train.npy'), mmap_mode='r').std(axis=0)
-        x_test = np.load(os.path.join(data_dir, 'x_test.npy'), mmap_mode='r')
-        y_test = np.load(os.path.join(data_dir, 'y_test.npy'), mmap_mode='r')
-        x_test = x_test - mean
-        x_test /= std
+    # Data
+    x_train = np.load(os.path.join(data_dir, 'x_train.npy'))
+    x_test = np.load(os.path.join(data_dir, 'x_test.npy'))
+    y_train = np.load(os.path.join(data_dir, 'y_train.npy'))
+    y_test = np.load(os.path.join(data_dir, 'y_test.npy'))
 
-        for file in os.listdir(model_dir):
-            try:
-                test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
-            except ValueError:
-                pass
+    # Assertions
+    assert len(x_train) == len(y_train)
+    assert len(x_test) == len(x_test)
+
+    # Regularize the data
+    mean = x_train.mean(axis=0)
+    x_train -= mean
+    x_test -= mean
+
+    std = x_train.std(axis=0)
+    x_train /= std
+    x_test /= std
+
+    # Model
+    model = build_premise_selection_model(input_shape=x_train.shape[1:], layers_config=layers_config, res=res, reg=reg)
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001), metrics=['accuracy'])
+    model.summary()
+
+    # Train model
+    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=val)
+
+    # Save history
+    with open('histories/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
+              + 'layers_config={}_res={}_reg={}.pickle'.format(layers_config, res, reg), 'wb') as dictionary:
+        pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Save trained model
+    model.save('models/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
+               + 'layers_config={}_res={}_reg={}.h5'.format(layers_config, res, reg))
+
+    # Test model
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
+    print('Test loss {}, test accuracy: {}%.'.format(round(test_loss, 4), round(100 * test_acc, 2)))
 
 
 if __name__ == '__main__':
