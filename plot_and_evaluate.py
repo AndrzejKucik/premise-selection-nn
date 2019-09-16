@@ -2,42 +2,38 @@
 
 """Plot training and validation losses and accuracy."""
 
-# Built-in modules
+# -- Built-in modules --
 import os
 from argparse import ArgumentParser
 
-# Third-party modules
+# -- Third-party modules --
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 from tensorflow.keras.models import load_model
 
 # -- File info --
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-08-21'
+__date__ = '2019-09-16'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
-
-# Argument for recording path (SEF format)
 parser.add_argument('-hd',
                     '--hist_dir',
                     required=False,
                     help='Path to the histories directory.',
                     type=str,
                     default=None)
-
 parser.add_argument('-m',
                     '--model_dir',
                     required=False,
                     help='Path to the models directory.',
                     type=str,
                     default=None)
-
 parser.add_argument('-d',
                     '--data_dir',
                     required=False,
@@ -186,7 +182,7 @@ def main():
             try:
                 test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
             except ValueError:
-               pass
+                pass
 
 
 if __name__ == '__main__':
