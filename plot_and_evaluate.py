@@ -1,21 +1,19 @@
 #!/usr/bin/env python3.7
 
-"""Premise selection model."""
+"""Plot training and validation losses and accuracy."""
 
-# -- Build-in modules --
-from argparse import ArgumentParser
+# -- Built-in modules --
 import os
+from argparse import ArgumentParser
 
 # -- Third-party modules --
+import matplotlib.pyplot as plt
 import numpy as np
 import pickle
-from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, ReLU
-from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l1_l2
+from tensorflow.keras.models import load_model
 
 # -- File info --
-__version__ = '0.2.6'
+__version__ = '0.2.0'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
@@ -24,168 +22,167 @@ __date__ = '2019-09-16'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
-# - Path to data directory
+parser.add_argument('-hd',
+                    '--hist_dir',
+                    required=False,
+                    help='Path to the histories directory.',
+                    type=str,
+                    default=None)
+parser.add_argument('-m',
+                    '--model_dir',
+                    required=False,
+                    help='Path to the models directory.',
+                    type=str,
+                    default=None)
 parser.add_argument('-d',
                     '--data_dir',
-                    required=True,
-                    help='Path to training and test data.',
+                    required=False,
+                    help='Path to the data directory.',
                     type=str,
                     default=None)
-# - Training parameters
-parser.add_argument('-bs',
-                    '--batch_size',
+parser.add_argument('-pd',
+                    '--plot_dir',
                     required=False,
-                    help='Batch size.',
-                    type=int,
-                    default=32)
-parser.add_argument('-e',
-                    '--epochs',
-                    required=False,
-                    help='Number of epochs.',
-                    type=int,
-                    default=10)
-parser.add_argument('-val',
-                    '--validation',
-                    required=False,
-                    help='Validation split',
-                    type=float,
-                    default=0)
-# - Model architecture parameters
-parser.add_argument('-lc',
-                    '--layers_config',
-                    required=False,
-                    help='Number of units in each layer (separate with commas).',
+                    help='Path to the plots directory.',
                     type=str,
                     default=None)
-parser.add_argument('-res',
-                    '--res',
-                    required=False,
-                    help='Residual connection?',
-                    type=str,
-                    default='False')
-parser.add_argument('-reg',
-                    '--reg',
-                    required=False,
-                    help='Regularize?',
-                    type=str,
-                    default='False')
 
 
-def build_premise_selection_model(input_shape: tuple, layers_config: list = None, res: bool = False, reg: bool = False):
-    """
-    Premise selection model.
-
-    Parameters
-    ----------
-    input_shape : tuple
-        shape of the input premises; the length of the conjecture vector plus the length of the axiom vector,
-    layers_config : list
-        configuration of the dense layers; the i-th element of layers_config correspond to the number of dense units
-        of the i-th dense layer,
-    res : bool
-        True if each dense layer is to be followed by a residual connection with another dense layer, with the same
-        number of parameters,
-    reg : bool
-        True if there is to be a regularization (batch normalization, bias l1_l2 regularizer, dropout).
-
-    Returns
-    -------
-    model
-        Keras model; premise selection network.
-    """
-    if layers_config is None:
-        layers_config = []
-
-    if reg:
-        regularizer = reg = l1_l2(l1=0.01, l2=0.01)
+def get_title(file_name):
+    if 'embedding' in file_name:
+        title = 'embedding'
     else:
-        regularizer = None
+        title = [lc for lc in file_name.split('_') if 'config' in lc.lower()][0].split('=')[-1][1:-1].replace(' ', '')
 
-    model_input = Input(shape=input_shape, name='input_layer')
-    x = Flatten(name='flatten')(model_input)
-
-    for n in range(len(layers_config)):
-        x = Dense(layers_config[n], bias_regularizer=regularizer, name='dense_' + str(n))(x)
-        if reg:
-            x = BatchNormalization(name='batch_normalization_' + str(n))(x)
-            x = ReLU(name='re_lu_' + str(n))(x)
-            x = Dropout(0.5, name='dropout_' + str(n))(x)
+        if 'res=True' in file_name:
+            res = True
         else:
-            x = ReLU(name='re_lu_' + str(n))(x)
+            res = False
+
         if res:
-            y = Dense(layers_config[n], bias_regularizer=regularizer, name='res_dense_' + str(n))(x)
-            x = Add(name='add_' + str(n))([x, y])
-            if reg:
-                x = BatchNormalization(name='res_batch_normalization_' + str(n))(x)
-                x = ReLU(name='res_re_lu_' + str(n))(x)
-                x = Dropout(0.5, name='res_dropout_' + str(n))(x)
-            else:
-                x = ReLU(name='res_re_lu_' + str(n))(x)
+            title = title.split(',')
+            title = u'\u00D7'.join([number + '(+' + number + ')' for number in title])
+        else:
+            title = title.replace(',', u'\u00D7')
 
-    model_output = Dense(1, activation='sigmoid', name='dense_' + str(len(layers_config)))(x)
+        if title == '':
+            title = 'logistic regression'
+        else:
+            title += ' hidden units'
 
-    model = Model(model_input, model_output, name='premise_selection_model')
+        if 'rnn=True' in file_name:
+            title += ' (RNN)'
 
-    return model
+    title += ' model'
+
+    return title
+
+
+def plot_graphs(path_to_history, path_to_plots):
+    with open(path_to_history, 'rb') as dictionary:
+        history = pickle.load(dictionary)
+
+    loss = history['loss']
+    acc = history['accuracy']
+
+    try:
+        val_loss = history['val_loss']
+        val_acc = history['val_accuracy']
+    except KeyError:
+        val_loss = None
+        val_acc = None
+
+    epochs = range(1, len(loss) + 1)
+
+    file_name = ''.join(os.path.basename(path_to_history).split('.')[:-1])
+    plot_title = get_title(file_name)
+
+    # Loss
+    plt.figure(figsize=(16, 12))
+    plt.plot(epochs, loss, 'ro', label='Training loss')
+    title_loss = 'Training '
+    if val_loss is not None:
+        plt.plot(epochs, val_loss, 'r', label='Validation loss')
+        title_loss += 'and validation '
+    title_loss += 'loss for the ' + plot_title
+    plt.xlabel('Epochs', fontsize=16)
+    plt.ylabel('Loss', fontsize=16)
+    plt.title(title_loss, fontsize=20)
+    plt.grid()
+    plt.legend(fontsize=16)
+    plt.savefig(fname=os.path.join(path_to_plots, file_name) + '_loss.png', bbox_inches='tight')
+    plt.close()
+
+    # Accuracy
+    plt.figure(figsize=(16, 12))
+    plt.plot(epochs, acc, 'bo', label='Training accuracy')
+    title_acc = 'Training '
+    if val_acc is not None:
+        plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
+        title_acc += 'and validation '
+    title_acc += 'accuracy for the ' + plot_title
+    plt.xlabel('Epochs', fontsize=16)
+    plt.ylabel('Accuracy', fontsize=16)
+    plt.title(title_acc, fontsize=20)
+    plt.grid()
+    plt.legend(fontsize=16)
+    plt.savefig(fname=os.path.join(path_to_plots, file_name) + '_accuracy.png', bbox_inches='tight')
+    plt.close()
+
+
+def test_models(path_to_model, x_test, y_test):
+    model = load_model(path_to_model)
+    model.summary()
+
+    title = get_title(path_to_model)
+
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
+    y_pred = model.predict(x_test)[:, 0]
+
+    true_positive = np.dot((y_pred >= .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
+    true_negative = np.dot((y_pred < .5).astype('float32'), (y_test == False).astype('float32')) / len(y_test)
+    false_positive = np.dot((y_pred >= .5).astype('float32'), (y_test == False).astype('float32')) / len(y_test)
+    false_negative = np.dot((y_pred < .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
+
+    print('Test loss {}, test accuracy: {}% for {}.'.format(round(test_loss, 4), round(100 * test_acc, 2), title))
+    print('Confusion matrix for {}: TP={}%, TN={}%, FP={}%, FN={}%.'.format(title,
+                                                                            round(100 * true_positive, 2),
+                                                                            round(100 * true_negative, 2),
+                                                                            round(100 * false_positive, 2),
+                                                                            round(100 * false_negative, 2)))
 
 
 def main():
     # Arguments
     args = vars(parser.parse_args())
-    # - Path to data directory
+    hist_dir = args['hist_dir']
+    model_dir = args['model_dir']
     data_dir = args['data_dir']
-    # - Training parameters
-    batch_size = args['batch_size']
-    epochs = args['epochs']
-    val = args['validation'] if args['validation'] != 0 else None
-    # - Model architecture parameters
-    layers_config = [] if (args['layers_config'] is None) else [int(unit) for unit in args['layers_config'].split(',')]
-    res = True if (args['res'].lower() in ['t', 'true', '1']) else False
-    reg = True if (args['reg'].lower() in ['t', 'true', '1']) else False
+    plot_dir = args['plot_dir']
+    if plot_dir is None:
+        try:
+            os.mkdir('plots')
+        except OSError:
+            pass
+        plot_dir = os.path.join(os.getcwd(), 'plots')
 
-    # Checks
-    if not os.path.isdir(data_dir):
-        exit('Path to data directory is not a valid path!')
+    if hist_dir is not None:
+        for file in os.listdir(hist_dir):
+            plot_graphs(path_to_history=os.path.join(hist_dir, file), path_to_plots=plot_dir)
 
-    # Data
-    x_train = np.load(os.path.join(data_dir, 'x_train.npy'))
-    x_test = np.load(os.path.join(data_dir, 'x_test.npy'))
-    y_train = np.load(os.path.join(data_dir, 'y_train.npy'))
-    y_test = np.load(os.path.join(data_dir, 'y_test.npy'))
+    if not (data_dir is None or model_dir is None):
+        mean = np.load(os.path.join(data_dir, 'x_train.npy'), mmap_mode='r').mean(axis=0)
+        std = np.load(os.path.join(data_dir, 'x_train.npy'), mmap_mode='r').std(axis=0)
+        x_test = np.load(os.path.join(data_dir, 'x_test.npy'), mmap_mode='r')
+        y_test = np.load(os.path.join(data_dir, 'y_test.npy'), mmap_mode='r')
+        x_test = x_test - mean
+        x_test /= std
 
-    # Assertions
-    assert len(x_train) == len(y_train)
-    assert len(x_test) == len(x_test)
-
-    # Regularize the data
-    mean = x_train.mean(axis=0)
-    x_train -= mean
-    x_test -= mean
-
-    std = x_train.std(axis=0)
-    x_train /= std
-    x_test /= std
-
-    # Model
-    model = build_premise_selection_model(input_shape=x_train.shape[1:], layers_config=layers_config, res=res, reg=reg)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001), metrics=['accuracy'])
-    model.summary()
-
-    # Train model
-    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=val)
-
-    # Save history
-    with open('histories/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-              + 'layers_config={}_res={}_reg={}.pickle'.format(layers_config, res, reg), 'wb') as dictionary:
-        pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # Save trained model
-    model.save('models/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-               + 'layers_config={}_res={}_reg={}.h5'.format(layers_config, res, reg))
-
-    # Test model
-    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
-    print('Test loss {}, test accuracy: {}%.'.format(round(test_loss, 4), round(100 * test_acc, 2)))
+        for file in os.listdir(model_dir):
+            try:
+                test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
+            except ValueError:
+                pass
 
 
 if __name__ == '__main__':
