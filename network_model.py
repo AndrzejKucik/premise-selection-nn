@@ -9,18 +9,19 @@ import os
 # -- Third-party modules --
 import numpy as np
 import pickle
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import Add, BatchNormalization, Input, Dense, Dropout, Flatten, ReLU
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l1_l2
 
 # -- File info --
-__version__ = '0.2.5'
+__version__ = '0.2.6'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-09-11'
+__date__ = '2019-09-16'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
@@ -42,6 +43,12 @@ parser.add_argument('-e',
                     '--epochs',
                     required=False,
                     help='Number of epochs.',
+                    type=int,
+                    default=10)
+parser.add_argument('-es',
+                    '--early_stopping',
+                    required=False,
+                    help='Early stopping tolerance',
                     type=int,
                     default=10)
 parser.add_argument('-val',
@@ -137,6 +144,7 @@ def main():
     # - Training parameters
     batch_size = args['batch_size']
     epochs = args['epochs']
+    es = args['early_stopping']
     val = args['validation'] if args['validation'] != 0 else None
     # - Model architecture parameters
     layers_config = [] if (args['layers_config'] is None) else [int(unit) for unit in args['layers_config'].split(',')]
@@ -171,17 +179,28 @@ def main():
     model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001), metrics=['accuracy'])
     model.summary()
 
+    # Checkpoints
+    if es > 0 and val > 0:
+        callbacks = [EarlyStopping(monitor='val_loss', patience=es),
+                     ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=es // 2),
+                     ModelCheckpoint(filepath='models/best_bs={}_ep={}_es={}_'.format(batch_size, epochs, es)
+                                              + 'val={}_lc={}_res={}_reg={}.h5'.format(val, layers_config, res, reg),
+                                     monitor='val_loss', save_best_only=True)]
+    else:
+        callbacks = None
+
     # Train model
-    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=val)
+    history = model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=True, validation_split=val,
+                        callbacks=callbacks)
 
     # Save history
-    with open('histories/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-              + 'layers_config={}_res={}_reg={}.pickle'.format(layers_config, res, reg), 'wb') as dictionary:
+    with open('histories/bs={}_ep={}_es={}_val={}_'.format(batch_size, epochs, es, val)
+              + 'lc={}_res={}_reg={}.pickle'.format(layers_config, res, reg), 'wb') as dictionary:
         pickle.dump(history.history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Save trained model
-    model.save('models/batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-               + 'layers_config={}_res={}_reg={}.h5'.format(layers_config, res, reg))
+    model.save('models/bs={}_ep={}_es={}_val={}_'.format(batch_size, epochs, es, val)
+               + 'lc={}_res={}_reg={}.h5'.format(layers_config, res, reg))
 
     # Test model
     test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
