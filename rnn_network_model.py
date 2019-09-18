@@ -18,12 +18,12 @@ from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.regularizers import l1_l2
 
 # -- File info --
-__version__ = '0.2.2'
+__version__ = '0.2.3'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-09-13'
+__date__ = '2019-09-18'
 
 
 # Split layer
@@ -44,14 +44,13 @@ class Split(Layer):
         self.num_splits = num_splits
         super(Split, self).__init__(**kwargs)
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs):
         """
 
         Parameters
         ----------
         inputs : tensorflow.python.ops.variables.VariableMetaclass
             input tensor
-        kwargs
 
         Returns
         -------
@@ -65,6 +64,9 @@ class Split(Layer):
         return split
 
     def compute_output_signature(self, input_signature):
+        pass
+
+    def get_config(self):
         pass
 
 
@@ -225,14 +227,14 @@ def build_rnn_model(input_shape, bidirectional=False, layers_config=None, rec='s
 
         # -- Residual layers
         if res:
-            y = Dense(layers_config[n], bias_regularizer=reg, name='res_dense_' + str(n))(x)
+            y = Dense(layers_config[n], bias_regularizer=regularizer, name='res_dense_' + str(n))(x)
             x = Add(name='add_' + str(n))([x, y])
             if reg:
                 x = BatchNormalization(name='res_batch_normalization_' + str(n))(x)
-                x = ReLU()(name='res_re_lu_' + str(n))(x)
+                x = ReLU(name='res_re_lu_' + str(n))(x)
                 x = Dropout(0.5, name='res_dropout_' + str(n))(x)
             else:
-                x = ReLU()(name='res_re_lu_' + str(n))(x)
+                x = ReLU(name='res_re_lu_' + str(n))(x)
 
     # - Model output; usefulness of an axiom, given the conjecture
     model_output = Dense(1, activation='sigmoid', name='conjecture_usefulness')(x)
@@ -316,14 +318,14 @@ def main():
         print(main_history)
 
         # Save history
-        with open('histories/rnn_batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-                  + 'bi={}_layers_config={}_rec={}_res={}_reg={}.pickle'.format(bi, layers_config, rec, res, reg),
+        with open('histories/rnn_bs={}_ep={}_val={}_'.format(batch_size, epochs, val)
+                  + 'bi={}_lc={}_rec={}_res={}_reg={}.pickle'.format(bi, layers_config, rec, res, reg),
                   'wb') as dictionary:
             pickle.dump(main_history, dictionary, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Save trained model
-    model.save('models/rnn_batch_size={}_epochs={}_val={}_'.format(batch_size, epochs, val)
-               + 'bi={}_layers_config={}_rec={}_res={}_reg={}.h5'.format(bi, layers_config, rec, res, reg))
+    model.save('models/rnn_bs={}_ep={}_val={}_'.format(batch_size, epochs, val)
+               + 'bi={}_lc={}_rec={}_res={}_reg={}.h5'.format(bi, layers_config, rec, res, reg))
 
     # Test model
     x_test = np.load(os.path.join(data_dir, 'x_test_rnn.npy'), mmap_mode='r')
