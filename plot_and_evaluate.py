@@ -3,6 +3,7 @@
 """Plot training and validation losses and accuracy."""
 
 # -- Built-in modules --
+import ast
 import os
 from argparse import ArgumentParser
 
@@ -11,14 +12,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 from tensorflow.keras.models import load_model
+from tensorflow.keras.optimizers import RMSprop
+
+# -- Proprietary modules --
+from rnn_network_model import build_rnn_model
 
 # -- File info --
-__version__ = '0.2.0'
+__version__ = '0.1.4'
 __copyright__ = 'Andrzej Kucik 2019'
 __author__ = 'Andrzej Kucik'
 __maintainer__ = 'Andrzej Kucik'
 __email__ = 'andrzej.kucik@gmail.com'
-__date__ = '2019-09-16'
+__date__ = '2019-09-18'
 
 # Argument parser
 parser = ArgumentParser(description='Process arguments')
@@ -28,7 +33,7 @@ parser.add_argument('-hd',
                     help='Path to the histories directory.',
                     type=str,
                     default=None)
-parser.add_argument('-m',
+parser.add_argument('-md',
                     '--model_dir',
                     required=False,
                     help='Path to the models directory.',
@@ -52,6 +57,7 @@ def get_title(file_name):
     if 'embedding' in file_name:
         title = 'embedding'
     else:
+        print(file_name)
         title = [lc for lc in file_name.split('_') if 'config' in lc.lower()][0].split('=')[-1][1:-1].replace(' ', '')
 
         if 'res=True' in file_name:
@@ -131,12 +137,28 @@ def plot_graphs(path_to_history, path_to_plots):
 
 
 def test_models(path_to_model, x_test, y_test):
-    model = load_model(path_to_model)
+    try:
+        model = load_model(path_to_model)
+    except ValueError:
+        model_name = str(os.path.basename(path_to_model))[:-3]
+        model_name = model_name.split('_')
+        print(model_name)
+        config = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('config')][0]
+        config = ast.literal_eval(config)
+        bi = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('bi')][0]
+        rec = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('rec')][0]
+        reg = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('reg')][0]
+        res = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('res')][0]
+        model = build_rnn_model(input_shape=(2, 64, 256), bidirectional=bi, layers_config=config,
+                                rec=rec, res=res, reg=reg)
+        model.load_weights(path_to_model, by_name=True)
+        model.compile(loss='binary_crossentropy', optimizer=RMSprop(lr=0.001), metrics=['accuracy'])
+
     model.summary()
 
     title = get_title(path_to_model)
 
-    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=1)
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
     y_pred = model.predict(x_test)[:, 0]
 
     true_positive = np.dot((y_pred >= .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
@@ -179,10 +201,11 @@ def main():
         x_test /= std
 
         for file in os.listdir(model_dir):
-            try:
-                test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
-            except ValueError:
-                pass
+            if file.lower().startswith('rnn'):
+                x_test = np.load(os.path.join(data_dir, 'x_test_rnn.npy'), mmap_mode='r')
+                y_test = np.load(os.path.join(data_dir, 'y_test_rnn.npy'), mmap_mode='r')
+
+            test_models(path_to_model=os.path.join(model_dir, file), x_test=x_test, y_test=y_test)
 
 
 if __name__ == '__main__':
