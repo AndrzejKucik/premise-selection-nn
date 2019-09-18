@@ -58,7 +58,7 @@ def get_title(file_name):
         title = 'embedding'
     else:
         print(file_name)
-        title = [lc for lc in file_name.split('_') if 'config' in lc.lower()][0].split('=')[-1][1:-1].replace(' ', '')
+        title = [lc for lc in file_name.split('_') if 'lc' in lc.lower()][0].split('=')[-1][1:-1].replace(' ', '')
 
         if 'res=True' in file_name:
             res = True
@@ -142,13 +142,15 @@ def test_models(path_to_model, x_test, y_test):
     except ValueError:
         model_name = str(os.path.basename(path_to_model))[:-3]
         model_name = model_name.split('_')
-        print(model_name)
         config = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('config')][0]
         config = ast.literal_eval(config)
-        bi = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('bi')][0]
+        bi = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('bi')][0]
+        bi = True if bi == 'True' else False
         rec = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('rec')][0]
-        reg = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('reg')][0]
-        res = [bool(chunk.split('=')[-1]) for chunk in model_name if chunk.lower().startswith('res')][0]
+        reg = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('reg')][0]
+        reg = True if reg == 'True' else False
+        res = [chunk.split('=')[-1] for chunk in model_name if chunk.lower().startswith('res')][0]
+        res = True if res == 'True' else False
         model = build_rnn_model(input_shape=(2, 64, 256), bidirectional=bi, layers_config=config,
                                 rec=rec, res=res, reg=reg)
         model.load_weights(path_to_model, by_name=True)
@@ -167,11 +169,11 @@ def test_models(path_to_model, x_test, y_test):
     false_negative = np.dot((y_pred < .5).astype('float32'), (y_test == True).astype('float32')) / len(y_test)
 
     print('Test loss {}, test accuracy: {}% for {}.'.format(round(test_loss, 4), round(100 * test_acc, 2), title))
-    print('Confusion matrix for {}: TP={}%, TN={}%, FP={}%, FN={}%.'.format(title,
-                                                                            round(100 * true_positive, 2),
-                                                                            round(100 * true_negative, 2),
-                                                                            round(100 * false_positive, 2),
-                                                                            round(100 * false_negative, 2)))
+    print('Confusion matrix for {}: TP = {}%, TN = {}%, FP = {}%, FN = {}%.'.format(title,
+                                                                                    round(100 * true_positive, 2),
+                                                                                    round(100 * true_negative, 2),
+                                                                                    round(100 * false_positive, 2),
+                                                                                    round(100 * false_negative, 2)))
 
 
 def main():
